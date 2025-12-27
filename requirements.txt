@@ -1,0 +1,11 @@
+# Core dependencies
+numpy>=1.20
+scipy>=1.7
+
+# Phylogenetics plugin
+biopython>=1.80
+dendropy>=5.0
+
+# Optional (for later optimization)
+# numba>=0.55
+# jax>=0.4

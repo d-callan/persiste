@@ -1,0 +1,12 @@
+name: persiste
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - numpy>=1.20
+  - scipy>=1.7
+  - pip:
+    - biopython>=1.80
+    - dendropy>=5.0
