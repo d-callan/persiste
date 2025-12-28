@@ -8,7 +8,7 @@ def test_phylo_ctmc_basic():
     """Test basic PhyloCTMC observation model."""
     print("Testing PhyloCTMC observation model...")
     
-    from persiste.plugins.phylo.data.tree import PhylogeneticTree
+    from persiste.core.trees import TreeStructure
     from persiste.plugins.phylo.observation.phylo_ctmc import PhyloCTMCObservationModel
     from persiste.plugins.phylo.states.codons import CodonStateSpace
     from persiste.plugins.phylo.baselines.mg94 import MG94Baseline
@@ -16,7 +16,7 @@ def test_phylo_ctmc_basic():
     
     # Setup
     newick = "((A:0.1,B:0.1):0.1,(C:0.1,D:0.1):0.1);"
-    tree = PhylogeneticTree.from_string(newick)
+    tree = TreeStructure.from_newick(newick, backend="simple")
     
     codon_space = CodonStateSpace.universal()
     graph = CodonTransitionGraph(codon_space)
@@ -39,7 +39,7 @@ def test_phylo_ctmc_likelihood():
     """Test likelihood computation via PhyloCTMC."""
     print("Testing PhyloCTMC likelihood...")
     
-    from persiste.plugins.phylo.data.tree import PhylogeneticTree
+    from persiste.core.trees import TreeStructure
     from persiste.plugins.phylo.observation.phylo_ctmc import PhyloCTMCObservationModel
     from persiste.plugins.phylo.states.codons import CodonStateSpace
     from persiste.plugins.phylo.baselines.mg94 import MG94Baseline
@@ -48,7 +48,7 @@ def test_phylo_ctmc_likelihood():
     
     # Setup
     newick = "((A:0.1,B:0.1):0.1,(C:0.1,D:0.1):0.1);"
-    tree = PhylogeneticTree.from_string(newick)
+    tree = TreeStructure.from_newick(newick, backend="simple")
     
     codon_space = CodonStateSpace.universal()
     graph = CodonTransitionGraph(codon_space)
@@ -77,7 +77,7 @@ def test_phylo_ctmc_omega_variation():
     """Test likelihood with different ω values."""
     print("Testing ω variation...")
     
-    from persiste.plugins.phylo.data.tree import PhylogeneticTree
+    from persiste.core.trees import TreeStructure
     from persiste.plugins.phylo.observation.phylo_ctmc import PhyloCTMCObservationModel
     from persiste.plugins.phylo.states.codons import CodonStateSpace
     from persiste.plugins.phylo.baselines.mg94 import MG94Baseline
@@ -85,7 +85,7 @@ def test_phylo_ctmc_omega_variation():
     
     # Setup
     newick = "((A:0.1,B:0.1):0.1,(C:0.1,D:0.1):0.1);"
-    tree = PhylogeneticTree.from_string(newick)
+    tree = TreeStructure.from_newick(newick, backend="simple")
     
     codon_space = CodonStateSpace.universal()
     graph = CodonTransitionGraph(codon_space)
@@ -117,7 +117,7 @@ def test_phylo_ctmc_site_likelihoods():
     """Test per-site likelihood computation."""
     print("Testing per-site likelihoods...")
     
-    from persiste.plugins.phylo.data.tree import PhylogeneticTree
+    from persiste.core.trees import TreeStructure
     from persiste.plugins.phylo.observation.phylo_ctmc import PhyloCTMCObservationModel
     from persiste.plugins.phylo.states.codons import CodonStateSpace
     from persiste.plugins.phylo.baselines.mg94 import MG94Baseline
@@ -125,7 +125,7 @@ def test_phylo_ctmc_site_likelihoods():
     
     # Setup
     newick = "((A:0.1,B:0.1):0.1,(C:0.1,D:0.1):0.1);"
-    tree = PhylogeneticTree.from_string(newick)
+    tree = TreeStructure.from_newick(newick, backend="simple")
     
     codon_space = CodonStateSpace.universal()
     graph = CodonTransitionGraph(codon_space)
@@ -165,7 +165,7 @@ def test_phylo_ctmc_integration():
     """Test integration with PERSISTE ConstraintModel."""
     print("Testing PERSISTE integration...")
     
-    from persiste.plugins.phylo.data.tree import PhylogeneticTree
+    from persiste.core.trees import TreeStructure
     from persiste.plugins.phylo.observation.phylo_ctmc import PhyloCTMCObservationModel
     from persiste.plugins.phylo.states.codons import CodonStateSpace
     from persiste.plugins.phylo.baselines.mg94 import MG94Baseline
@@ -175,7 +175,7 @@ def test_phylo_ctmc_integration():
     
     # Setup
     newick = "((A:0.1,B:0.1):0.1,(C:0.1,D:0.1):0.1);"
-    tree = PhylogeneticTree.from_string(newick)
+    tree = TreeStructure.from_newick(newick, backend="simple")
     
     codon_space = CodonStateSpace.universal()
     graph = CodonTransitionGraph(codon_space)

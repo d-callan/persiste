@@ -9,6 +9,10 @@ Key components:
 - MG94Baseline: Muse-Gaut 1994 codon model (synonymous rates)
 - PhyloCTMCObservationModel: Phylogenetic likelihood via Felsenstein pruning
 
+Tree handling:
+- Uses core.trees.TreeStructure for tree representation
+- Deprecated: phylo.data.tree.PhylogeneticTree (use core.trees instead)
+
 Analyses:
 - FEL: Fixed Effects Likelihood (site-specific ω)
 - SLAC: Single Likelihood Ancestor Counting
@@ -25,10 +29,15 @@ from persiste.plugins.phylo.states.codons import CodonStateSpace
 from persiste.plugins.phylo.transitions.codon_graph import CodonTransitionGraph
 from persiste.plugins.phylo.baselines.mg94 import MG94Baseline
 
+# Re-export core tree utilities for convenience
+from persiste.core.trees import TreeStructure, load_tree
+
 __all__ = [
     "PhyloPlugin",
     "GeneticCode",
     "CodonStateSpace", 
     "CodonTransitionGraph",
     "MG94Baseline",
+    "TreeStructure",
+    "load_tree",
 ]
