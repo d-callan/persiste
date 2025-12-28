@@ -2,16 +2,30 @@
 
 **P**ersistence **E**vidence via **R**ate **S**ignatures **I**n **S**tate **T**ransition **E**volution
 
-A generalized framework for detecting constraint signatures in life-like systems, inspired by HyPhy's statistical philosophy but built for modern compute infrastructure.
+A generalized, **exploratory** framework for detecting constraint signatures in life-like systems, inspired by HyPhy's statistical philosophy but conceptually reframed around baseline vs. constraint.
 
 ## Overview
 
-PERSISTE detects constraint by comparing observed transition rates against a baseline generative process. The framework is domain-agnostic—plugins provide domain-specific instantiations for:
+PERSISTE detects constraint by comparing observed transition rates against a baseline generative process. The framework is domain-agnostic—plugins provide domain-specific instantiations.
 
-- **Phylogenetics** (`persiste-phylo`): HyPhy-compatible selection analysis
-- **Assembly Theory** (`persiste-assembly`): Chemical constraint in prebiotic systems
-- **Viral Quasispecies** (`persiste-quasispecies`): Population-level constraint
-- **Ecological Networks** (`persiste-ecology`): Interaction constraint
+**Current status:** this repository is primarily an exploration of the underlying framework ideas. The plugins should be treated as research prototypes, not robust scientific software.
+
+- **Phylogenetics** (`persiste-phylo`): FEL-like selection analysis as a **non-rigorous proof-of-concept** that the reframed framework can reproduce HyPhy-adjacent workflows. It is **not** intended to be a drop-in replacement for HyPhy.
+- **Assembly Theory** (`persiste-assembly`): an exploratory sandbox driven by curiosity about assembly theory, and an example of framework flexibility.
+
+Coming soon (exploratory):
+
+- **Gene content**: gain/loss dynamics
+- **Copy number**: copy number dynamics
+
+## What this project is (and isn’t)
+
+- **Exploration / prototyping**
+  The goal is to explore a general “baseline vs. constraint” inference pattern across domains.
+- **Not production-ready**
+  Expect incomplete APIs, rough edges, and changing interfaces.
+- **Not yet robust**
+  The methods and implementations here should not be treated as fully validated or publication-grade without independent verification.
 
 ## Core Concept
 
@@ -28,19 +42,17 @@ Where:
 ## Installation
 
 ```bash
-# Core framework
-pip install persiste
+# This is currently a research prototype repository.
+# Installation is typically via editable installs during development.
 
-# Plugins
-pip install persiste-phylo
-pip install persiste-assembly
+pip install -e .
 ```
 
 ## Quick Start
 
 ```python
 import persiste as ps
-from persiste.core import ConstraintInference, PoissonObservationModel
+"""Illustrative sketch (API is evolving)."""
 
 # Define state space
 states = ps.StateSpace.from_list(['A', 'B', 'C'])
@@ -66,8 +78,8 @@ data = ps.ObservedTransitions(
     exposure=1.0
 )
 
-# Define observation model (statistics)
-obs_model = ObservationModel(graph)
+ # Define observation model (statistics)
+obs_model = ObservationModel(graph)  # placeholder
 
 # Fit model (inference)
 # Dispatches to ConstraintInference engine
@@ -100,7 +112,14 @@ See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for detailed design and roa
 
 ## Development Status
 
-🚧 **Pre-alpha**: Core architecture in development
+🚧 **Pre-alpha / exploratory**
+
+- **Phylo plugin (FEL)**
+  Intended as a lightweight, not-very-rigorous validation that the framework can support HyPhy-adjacent workflows under a different conceptual framing.
+- **Assembly plugin**
+  An exploratory implementation motivated by curiosity about assembly theory and as a stress-test of framework flexibility.
+
+If you want to use this for serious scientific inference, plan to independently validate results and assumptions.
 
 ## License
 
