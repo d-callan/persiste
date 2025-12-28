@@ -1,0 +1,17 @@
+[INFO] Test 1.1: Likelihood computation works
+[INFO]   Log-likelihood: -1.506559
+[PASS]   Likelihood is finite and negative (correct)
+[INFO] Test 1.2: Gain-only limit
+[INFO]   Gain-only LL:  -0.0000
+[INFO]   High-loss LL:  -9.5916
+[PASS]   Gain-only has higher likelihood (correct)
+[INFO] Test 1.3: Loss-only limit
+[INFO]   Loss-only LL:  -0.0000
+[INFO]   High-gain LL:  -9.5916
+[PASS]   Loss-only has higher likelihood (correct)
+[INFO] Test 1.4: Branch length scaling
+[INFO]   Unit branches:    -1.506559
+[INFO]   Doubled branches: -1.504084
+[PASS]   Likelihoods differ (correct)
+
+RESULTS: 4 passed, 0 failed

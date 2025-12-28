@@ -47,6 +47,9 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.0.0",
 ]
+trees = [
+    "dendropy>=4.6.0",
+]
 gpu = [
     "jax[cuda12_pip]>=0.4.20",
 ]

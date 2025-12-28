@@ -1,0 +1,45 @@
+================================================================================
+GENECONTENT PLUGIN VALIDATION REPORT
+================================================================================
+Generated: 2025-12-28 16:50:31
+================================================================================
+
+SUMMARY
+--------------------------------------------------------------------------------
+Total tests: 4
+Passed:      4
+Failed:      0
+
+[PASS] ALL VALIDATION TESTS PASSED
+
+The GeneContent plugin has passed validation.
+The system is ready for use.
+
+Next steps:
+1. Run inference on real datasets
+2. Compare results with existing methods
+3. Document findings for publication
+
+================================================================================
+DETAILED RESULTS
+================================================================================
+
+[INFO] Test 1.1: Likelihood computation works
+[INFO]   Log-likelihood: -1.506559
+[PASS]   Likelihood is finite and negative (correct)
+[INFO] Test 1.2: Gain-only limit
+[INFO]   Gain-only LL:  -0.0000
+[INFO]   High-loss LL:  -9.5916
+[PASS]   Gain-only has higher likelihood (correct)
+[INFO] Test 1.3: Loss-only limit
+[INFO]   Loss-only LL:  -0.0000
+[INFO]   High-gain LL:  -9.5916
+[PASS]   Loss-only has higher likelihood (correct)
+[INFO] Test 1.4: Branch length scaling
+[INFO]   Unit branches:    -1.506559
+[INFO]   Doubled branches: -1.504084
+[PASS]   Likelihoods differ (correct)
+
+================================================================================
+END OF REPORT
+================================================================================

@@ -1,0 +1,18 @@
+[INFO] Test 1.1: Single branch analytical solution
+[INFO]   Analytical: -2.558836
+[INFO]   Computed:   -1.506559
+[FAIL]   Difference: 1.05e+00 >= 1.00e-06
+[INFO] Test 1.2: Gain-only limit
+[INFO]   Gain-only LL:  -0.0000
+[INFO]   High-loss LL:  -9.5916
+[PASS]   Gain-only has higher likelihood (correct)
+[INFO] Test 1.3: Loss-only limit
+[INFO]   Loss-only LL:  -0.0000
+[INFO]   High-gain LL:  -9.5916
+[PASS]   Loss-only has higher likelihood (correct)
+[INFO] Test 1.4: Branch length scaling
+[INFO]   Unit branches:    -1.506559
+[INFO]   Doubled branches: -1.504084
+[PASS]   Likelihoods differ (correct)
+
+RESULTS: 3 passed, 1 failed
