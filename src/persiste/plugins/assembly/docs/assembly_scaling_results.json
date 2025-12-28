@@ -1,0 +1,282 @@
+{
+  "results": {
+    "primitives": [
+      {
+        "n_primitives": 3,
+        "max_depth": 5,
+        "n_samples": 80,
+        "t_max": 50.0,
+        "ll_range": 49.252797538306964,
+        "curvature": 0.0,
+        "runtime": 4.849591970443726,
+        "n_states": 0,
+        "identifiable": true
+      },
+      {
+        "n_primitives": 4,
+        "max_depth": 5,
+        "n_samples": 80,
+        "t_max": 50.0,
+        "ll_range": 54.0614061003875,
+        "curvature": 66.2694400661976,
+        "runtime": 5.821315765380859,
+        "n_states": 0,
+        "identifiable": true
+      },
+      {
+        "n_primitives": 5,
+        "max_depth": 5,
+        "n_samples": 80,
+        "t_max": 50.0,
+        "ll_range": 62.64571514232378,
+        "curvature": 0.0,
+        "runtime": 6.811140060424805,
+        "n_states": 0,
+        "identifiable": true
+      },
+      {
+        "n_primitives": 6,
+        "max_depth": 5,
+        "n_samples": 80,
+        "t_max": 50.0,
+        "ll_range": 88.38037245634305,
+        "curvature": 140.51005694231128,
+        "runtime": 7.818898439407349,
+        "n_states": 0,
+        "identifiable": true
+      },
+      {
+        "n_primitives": 7,
+        "max_depth": 5,
+        "n_samples": 80,
+        "t_max": 50.0,
+        "ll_range": 84.61748000791573,
+        "curvature": 167.7520401515162,
+        "runtime": 9.143326759338379,
+        "n_states": 0,
+        "identifiable": true
+      }
+    ],
+    "depth": [
+      {
+        "n_primitives": 5,
+        "max_depth": 3,
+        "n_samples": 80,
+        "t_max": 50.0,
+        "ll_range": 37.961238614568956,
+        "curvature": 22.42153220265513,
+        "runtime": 5.259594202041626,
+        "n_states": 0,
+        "identifiable": true
+      },
+      {
+        "n_primitives": 5,
+        "max_depth": 4,
+        "n_samples": 80,
+        "t_max": 50.0,
+        "ll_range": 42.85805294985022,
+        "curvature": 49.78735879541637,
+        "runtime": 5.9574878215789795,
+        "n_states": 0,
+        "identifiable": true
+      },
+      {
+        "n_primitives": 5,
+        "max_depth": 5,
+        "n_samples": 80,
+        "t_max": 50.0,
+        "ll_range": 60.21452190743781,
+        "curvature": 106.88561621766195,
+        "runtime": 7.229416847229004,
+        "n_states": 0,
+        "identifiable": true
+      },
+      {
+        "n_primitives": 5,
+        "max_depth": 6,
+        "n_samples": 80,
+        "t_max": 50.0,
+        "ll_range": 68.49787743954823,
+        "curvature": 0.0,
+        "runtime": 7.914008140563965,
+        "n_states": 0,
+        "identifiable": true
+      },
+      {
+        "n_primitives": 5,
+        "max_depth": 7,
+        "n_samples": 80,
+        "t_max": 50.0,
+        "ll_range": 119.21451343800459,
+        "curvature": 98.37285162421455,
+        "runtime": 8.50342345237732,
+        "n_states": 0,
+        "identifiable": true
+      }
+    ],
+    "samples": [
+      {
+        "n_primitives": 5,
+        "max_depth": 5,
+        "n_samples": 20,
+        "t_max": 50.0,
+        "ll_range": 29.05098553723171,
+        "curvature": 47.985915898852284,
+        "runtime": 2.662409543991089,
+        "n_states": 0,
+        "identifiable": true
+      },
+      {
+        "n_primitives": 5,
+        "max_depth": 5,
+        "n_samples": 40,
+        "t_max": 50.0,
+        "ll_range": 31.98884504466392,
+        "curvature": 43.44460258768615,
+        "runtime": 5.631979703903198,
+        "n_states": 0,
+        "identifiable": true
+      },
+      {
+        "n_primitives": 5,
+        "max_depth": 5,
+        "n_samples": 60,
+        "t_max": 50.0,
+        "ll_range": 53.19562809459424,
+        "curvature": 29.08458012403233,
+        "runtime": 7.101377487182617,
+        "n_states": 0,
+        "identifiable": true
+      },
+      {
+        "n_primitives": 5,
+        "max_depth": 5,
+        "n_samples": 80,
+        "t_max": 50.0,
+        "ll_range": 96.32367445872484,
+        "curvature": 137.75958014052037,
+        "runtime": 7.441632509231567,
+        "n_states": 0,
+        "identifiable": true
+      },
+      {
+        "n_primitives": 5,
+        "max_depth": 5,
+        "n_samples": 100,
+        "t_max": 50.0,
+        "ll_range": 121.66198533604864,
+        "curvature": 141.00958924462338,
+        "runtime": 7.578632593154907,
+        "n_states": 0,
+        "identifiable": true
+      },
+      {
+        "n_primitives": 5,
+        "max_depth": 5,
+        "n_samples": 150,
+        "t_max": 50.0,
+        "ll_range": 135.28184200847153,
+        "curvature": 186.59042022537596,
+        "runtime": 7.848940134048462,
+        "n_states": 0,
+        "identifiable": true
+      },
+      {
+        "n_primitives": 5,
+        "max_depth": 5,
+        "n_samples": 200,
+        "t_max": 50.0,
+        "ll_range": 167.4322026971072,
+        "curvature": 320.043173882626,
+        "runtime": 8.765861988067627,
+        "n_states": 0,
+        "identifiable": true
+      }
+    ],
+    "time": [
+      {
+        "n_primitives": 5,
+        "max_depth": 5,
+        "n_samples": 80,
+        "t_max": 10.0,
+        "ll_range": 38.402447786708876,
+        "curvature": 0.0,
+        "runtime": 1.7052690982818604,
+        "n_states": 0,
+        "identifiable": true
+      },
+      {
+        "n_primitives": 5,
+        "max_depth": 5,
+        "n_samples": 80,
+        "t_max": 20.0,
+        "ll_range": 111.0955596503556,
+        "curvature": 121.0517088109907,
+        "runtime": 2.9922266006469727,
+        "n_states": 0,
+        "identifiable": true
+      },
+      {
+        "n_primitives": 5,
+        "max_depth": 5,
+        "n_samples": 80,
+        "t_max": 30.0,
+        "ll_range": 69.37976461304481,
+        "curvature": 46.427857477221835,
+        "runtime": 4.349975109100342,
+        "n_states": 0,
+        "identifiable": true
+      },
+      {
+        "n_primitives": 5,
+        "max_depth": 5,
+        "n_samples": 80,
+        "t_max": 40.0,
+        "ll_range": 74.17874596521517,
+        "curvature": 0.0,
+        "runtime": 5.560717344284058,
+        "n_states": 0,
+        "identifiable": true
+      },
+      {
+        "n_primitives": 5,
+        "max_depth": 5,
+        "n_samples": 80,
+        "t_max": 50.0,
+        "ll_range": 84.03529138321801,
+        "curvature": 123.96667430229024,
+        "runtime": 7.0848400592803955,
+        "n_states": 0,
+        "identifiable": true
+      },
+      {
+        "n_primitives": 5,
+        "max_depth": 5,
+        "n_samples": 80,
+        "t_max": 75.0,
+        "ll_range": 56.578961309570246,
+        "curvature": 43.77670229646603,
+        "runtime": 10.647568225860596,
+        "n_states": 0,
+        "identifiable": true
+      },
+      {
+        "n_primitives": 5,
+        "max_depth": 5,
+        "n_samples": 80,
+        "t_max": 100.0,
+        "ll_range": 64.23019064388455,
+        "curvature": 80.10616718721204,
+        "runtime": 14.207730293273926,
+        "n_states": 0,
+        "identifiable": true
+      }
+    ]
+  },
+  "minimal_requirements": {
+    "min_primitives": 3,
+    "min_depth": 3,
+    "min_samples": 20,
+    "min_time": 10.0
+  }
+}
