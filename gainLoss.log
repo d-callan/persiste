@@ -1,0 +1,236 @@
+START OF LOG FILE
+# Process_id= 541263
++=============================================================+
++  The gainLoss project:										
++  Analysis of Phyletic Patterns in a Likelihood Framework		
++  Version: gainLoss.VR01.266 - last updated 14.10.2013						
++  Ofir Cohen - ofircohe@tau.ac.il								
++=============================================================+
+
+ ---------------------- THE PARAMETERS ----------------------------
+Likelihood computation is performed while acounting for un-oberved data
+With min number of presences('1's)= 1
+With min number of absences('0's)= 0
+'Reversible'(Root.freq==stationary.freq) model is used
+RootFreq EQ stationary (taken from each sp - gain/(gain+loss) )
+inTree file: /home/dcallan-adm/Documents/veg/persiste/tool_comparison_output/gloome_run/tree.nwk
+inSeq file: /home/dcallan-adm/Documents/veg/persiste/tool_comparison_output/gloome_run/sequences.fa
+log: gainLoss.log with level= 5
+gain , loss ~ Gamma(Alpha,Beta) 
+gain - a Gamma prior distribution with: 1 categories
+loss - a Gamma prior distribution with: 1 categories
+Optimization of the model parmeters is performed
+rate inference method is: maximum likelihood (ML) 
+branch lengths are not optimized
+gain and loss 4site are calculated 
+calculePosteriorExpectationOfChange is done Analytically
+-------------------------------------------------------------------
+
+ startSequenceContainer
+! WARN: Illegal minNumOfOnes found in pos=43 Reset to minNumOfOnes=0
+!!! WARN: both minNumOfOnes and minNumOfZeros=0. Thus, no need perform likelihood correction (accountForMissingData)
+numberOfSeqs=8
+seqLen=200
+Num of zeros=954
+Num of ones=646
+Num of unKnowns=0
+
+ startStochasticProcessVec with: GainCategories=1 and GainCategories=1
+
+InitGainLossByEmpiricalFreq: freq 1= 0.40375 Thus, gainLossRatioToCompleteByBeta= 0.338574
+gainDist GENERAL_GAMMA with: initAlphaGain=1 initBetaGain=1.71859 and _numberOfGainCategories= 1
+lossDist GENERAL_GAMMA with: initAlphaLoss=0.5 initBetaLoss=0.581871 and _numberOfLossCategories= 1
+Stochastic process vector normalized with norm_factor=1
+startStochasticProcess SimpleGamma of 4 categories... 
+with gain=0.581871 loss=0.859296 root(1)=0.40375
+Stochastic process 'simple' normalized with norm_factor=0.693882
+
+ startingEvolTreeTopology...
+default rooting used, root name is N1
+sons of root are:
+N2  N5  
+The Tree Likelihood AllPosAlphTheSame is -1107.56
+Starting normalizeQandTree...(so that sumQii=1 (or weighted ave. of sunOii's for many Qs))
+Q were multiplied by 1
+The Tree Likelihood AllPosAlphTheSame is -1107.56
+AlphaGain 1
+BetaGain 1.71859
+  Gain Expectation = 0.581871
+  Gain Expectancy = 0.581871
+  Gain Standard Deviation = 0.581871
+AlphaLoss 0.5
+BetaLoss 0.581871
+  Loss Expectation = 0.859296
+  Loss Expectancy = 0.859296
+  Loss Standard Deviation = 1.21523
+	Expectancy(Gain)/Expectancy(Loss)  ratio by Gamma Params= 0.677149
+	Expectancy(Gain)/Expectancy(Loss)  by computation = 0.677149
+ Stationary '1' Freq at the root - for each stochastic process g/(g+l), with expectation of 0.5
+ Total branch lengths:14
+
+Starting MaxParsimonyChange...
+ MaxParsimony with costMatrix - gainLossRatio 1:2.001
+Cost of tree is 583.017 (with 566 events)
+ Gain=17
+ Losses=549
+TIME = 0 minutes
+
+
+
+ *** Start Optimizations
+ Modify epsilonOptimizations according to logL: logL (1107.56) * originalEpsilon * percent improve (2e-05) 
+eOptCorrected(cycle)=	0.110756
+eOptModelCorrected=	0.00110734
+eOptBBLCorrected=	0.0022149
+ Start multipleAllBranchesByFactorAtStart use epsilonOptimization 0.0022149 Total branch lengths:14
+Allow proportion: 1e-08 to 1e+08
+Branch factor val = 1 logL = -1107.56
+Branch factor val = 0.000879573 logL = -3280.39
+Branch factor val = 1136.91 logL = -1109.04
+Branch factor val = 33.5578 logL = -1109.04
+Branch factor val = 0.0680481 logL = -1431.13
+Branch factor val = 3.8265 logL = -1109.04
+Branch factor val = 0.358241 logL = -1112.22
+Branch factor val = 1.66959 logL = -1108.93
+Branch factor val = 0.675632 logL = -1104.98
+Branch factor val = 0.530231 logL = -1104.38
+Branch factor val = 0.496008 logL = -1104.71
+Branch factor val = 0.568737 logL = -1104.32
+Branch factor val = 0.557872 logL = -1104.31
+Branch factor val = 0.559242 logL = -1104.31
+Branch factor val = 0.559963 logL = -1104.31
+The Tree Likelihood AllPosAlphTheSame is -1104.31
+Tree multiplied by 0.559242 Total branch lengths:7.82939
+-------------------------------
+Starting optimizations: maxNumIterations=1
+
+######### optimization starting epsilonCycle=0.110756 maxNumIterations=1
+start optimization with L= -1104.31
+
+------ Model+BBL iter=1
+### optimization starting- epsilonOptParam=0.00110734 epsilonOptIter= 0.00332202, MaxNumIterations=10
+start optimization with:
+ L= -1104.31
+ gainLossRatio= 0.677149
+ GainAlpha= 1 GainBeta= 1.71859
+ LossAlpha= 0.5 LossBeta= 0.581871
+
+---- iter=1
+with val= 4.75498 which_param:: 9 L=-1104.31
+with val= 0.451408 which_param:: 9 L=-1104.31
+with val= 0.105337 which_param:: 9 L=-1104.31
+with val= 0.0428538 which_param:: 9 L=-1104.31
+with val= 0.0245805 which_param:: 9 L=-1104.31
+with val= 0.0174341 which_param:: 9 L=-1104.31
+with val= 0.0140991 which_param:: 9 L=-1104.31
+with val= 0.0123653 which_param:: 9 L=-1104.31
+with val= 0.0114021 which_param:: 9 L=-1104.31
+with val= 0.0108448 which_param:: 9 L=-1104.31
+with val= 0.010514 which_param:: 9 L=-1104.31
+with val= 0.0103146 which_param:: 9 L=-1104.31
+with val= 0.0101933 which_param:: 9 L=-1104.31
+with val= 0.010119 which_param:: 9 L=-1104.31
+with val= 0.0100677 which_param:: 9 L=-1104.31
+with val= 1 which_param:: 0 L=-1104.31
+with val= 8.25735 which_param:: 0 L=-1104.31
+with val= 12.7426 which_param:: 0 L=-1104.31
+with val= 15.5147 which_param:: 0 L=-1104.31
+with val= 17.2279 which_param:: 0 L=-1104.31
+with val= 18.2868 which_param:: 0 L=-1104.31
+with val= 18.9412 which_param:: 0 L=-1104.31
+with val= 19.3456 which_param:: 0 L=-1104.31
+with val= 19.5956 which_param:: 0 L=-1104.31
+with val= 19.75 which_param:: 0 L=-1104.31
+with val= 19.8455 which_param:: 0 L=-1104.31
+with val= 19.9045 which_param:: 0 L=-1104.31
+with val= 19.941 which_param:: 0 L=-1104.31
+with val= 19.9635 which_param:: 0 L=-1104.31
+with val= 0.5 which_param:: 3 L=-1104.31
+with val= 7.94834 which_param:: 3 L=-1104.31
+with val= 12.5517 which_param:: 3 L=-1104.31
+with val= 15.3967 which_param:: 3 L=-1104.31
+with val= 17.155 which_param:: 3 L=-1104.31
+with val= 18.2417 which_param:: 3 L=-1104.31
+with val= 18.9133 which_param:: 3 L=-1104.31
+with val= 19.3284 which_param:: 3 L=-1104.31
+with val= 19.5849 which_param:: 3 L=-1104.31
+with val= 19.7435 which_param:: 3 L=-1104.31
+with val= 19.8415 which_param:: 3 L=-1104.31
+with val= 19.902 which_param:: 3 L=-1104.31
+with val= 19.9394 which_param:: 3 L=-1104.31
+with val= 19.9626 which_param:: 3 L=-1104.31
+ model optimization converged. Iter= 1 Likelihood=-1104.31
+-------------------------------
+Model optimization over with: 
+AlphaGain 1
+BetaGain 1.71859
+ Gain Expectation = 0.581871
+ Gain Expectancy = 0.581871
+ Gain Standard Deviation = 0.581871
+AlphaLoss 0.5
+BetaLoss 0.581871
+ Loss Expectation = 0.859296
+ Loss Expectancy = 0.859296
+ Loss Standard Deviation = 1.21523
+	Gain/Loss Expectancy ratio= 0.677149
+	Expectancy(Gain)/Expectancy(Loss)  by computation = 0.677149
+updated likelihood (after optimizeParameters)= -1104.31
+Model optimization RUNNING TIME = 0 minutes
+
+startStochasticProcess SimpleGamma of 4 categories... 
+with gain=0.581871 loss=0.859296 root(1)=0.40375
+ OverAll optimization converged. Iter= 1 Likelihood=-1104.31
+Optimization RUNNING TIME = 0 minutes
+
+# Best likelihood after optimization=-1104.31
+TIME = 0 minutes
+
+Starting normalizeQandTree...(so that sumQii=1 (or weighted ave. of sunOii's for many Qs))
+Q were multiplied by 1
+Tree branches multi by 1
+The Tree Likelihood AllPosAlphTheSame is -1104.31
+AlphaGain 1
+BetaGain 1.71859
+  Gain Expectation = 0.581871
+  Gain Expectancy = 0.581871
+  Gain Standard Deviation = 0.581871
+AlphaLoss 0.5
+BetaLoss 0.581871
+  Loss Expectation = 0.859296
+  Loss Expectancy = 0.859296
+  Loss Standard Deviation = 1.21523
+	Expectancy(Gain)/Expectancy(Loss)  ratio by Gamma Params= 0.677149
+	Expectancy(Gain)/Expectancy(Loss)  by computation = 0.677149
+ Stationary '1' Freq at the root - for each stochastic process g/(g+l), with expectation of 0.5
+ Total branch lengths:7.82939
+
+ WARN: distanceFromRootForRecent=1, distanceFromNearestOTUForRecent=0.000001 are not estimated
+Starting printLofPos...
+
+Starting gain4site and loss4site...
+perform computeGain4Site... while computing posteriorProb PerCategory PerPosition
+Calculating posterior and expectation of posterior values for all sites
+perform computeLoss4Site... while computing posteriorProb PerCategory PerPosition
+Calculating posterior and expectation of posterior values for all sites
+computeEB_EXP_GL4Site RUNNING TIME = 0 minutes
+
+Starting calculePosteriorExpectationOfChange...
+
+Computation stochastic mapping
+computePosteriorOfChangeGivenTerminalsPerSpPerCat with sp:
+ Gain= 1
+ Loss= 1
+TIME = 0 minutes
+
+Mean   values Gain=3.7192	Loss=4.11006
+Median values Gain=3.95959	Loss=4.05226
+
+TIME = 0 minutes (calculePosteriorExpectationOfChange)
+
+
+Starting ancestralReconstructorBasedOnJoint...
+computeAncestralPosterior (take into acount joint probabilty)...
+TIME = 0 minutes
+
+
+TOTAL RUNNING TIME = 0 minutes
