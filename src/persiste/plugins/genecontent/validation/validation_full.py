@@ -91,31 +91,25 @@ class ValidationSuite:
             # Sample root state from equilibrium
             root_state = self.rng.choice([0, 1], p=[pi_0, pi_1])
             
-            # Simulate down the tree
+            # Simulate down the tree using edge-based traversal
             node_states = {tree.root_index: root_state}
             
-            for node_idx in range(tree.n_nodes):
-                if node_idx in node_states:
-                    parent_state = node_states[node_idx]
+            # Build edge list from parent_indices (correct topological order)
+            for child_idx in range(tree.n_nodes):
+                parent_idx = tree.parent_indices[child_idx]
+                if parent_idx >= 0:  # Not root
+                    parent_state = node_states[parent_idx]
+                    t = tree.branch_lengths[child_idx]
                     
-                    # Get children
-                    child_indices = tree.children_array[tree.children_array[:, 0] == node_idx]
+                    # Compute transition probabilities
+                    P = expm(Q * t)
                     
-                    for _, child1_idx, child2_idx in child_indices:
-                        for child_idx in [child1_idx, child2_idx]:
-                            if child_idx >= 0:  # Valid child
-                                # Get branch length
-                                t = tree.branch_lengths[child_idx]
-                                
-                                # Compute transition probabilities
-                                P = expm(Q * t)
-                                
-                                # Sample child state
-                                child_state = self.rng.choice(
-                                    [0, 1],
-                                    p=P[parent_state, :]
-                                )
-                                node_states[child_idx] = child_state
+                    # Sample child state
+                    child_state = self.rng.choice(
+                        [0, 1],
+                        p=P[parent_state, :]
+                    )
+                    node_states[child_idx] = child_state
             
             # Extract tip states
             for tip_idx_pos, tip_idx in enumerate(tree.tip_indices):

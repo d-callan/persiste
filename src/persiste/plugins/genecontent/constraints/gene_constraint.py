@@ -229,9 +229,13 @@ class RetentionBiasConstraint(GeneContentConstraint):
     Attributes:
         retained_families: Set of family IDs under retention constraint
         retention_strength: Log-reduction in loss rate (negative = reduced loss)
+        prior_mean: Mean of Gaussian prior on retention_strength (default: 0)
+        prior_std: Standard deviation of Gaussian prior (default: 2.0)
     """
     retained_families: Set[str] = field(default_factory=set)
     retention_strength: float = -1.0  # Default: ~2.7x reduction in loss rate
+    prior_mean: float = 0.0  # Null hypothesis: no effect
+    prior_std: float = 2.0  # Weak prior: allows effects up to ~6x rate change
     
     def get_effect(
         self,
@@ -259,6 +263,25 @@ class RetentionBiasConstraint(GeneContentConstraint):
     def n_parameters(self) -> int:
         """One parameter."""
         return 1
+    
+    def log_prior(self) -> float:
+        """
+        Gaussian prior on retention strength.
+        
+        Encodes the null hypothesis (θ = 0) while allowing deviations.
+        This is Fix #3: hierarchical shrinkage to reduce variance and bias.
+        
+        Returns:
+            Log-probability under N(prior_mean, prior_std²)
+        """
+        if self.prior_std <= 0:
+            return 0.0  # Flat prior if std is non-positive
+        
+        # Gaussian log-probability: -0.5 * ((x - μ) / σ)² - log(σ√(2π))
+        z = (self.retention_strength - self.prior_mean) / self.prior_std
+        log_prob = -0.5 * z**2 - np.log(self.prior_std * np.sqrt(2 * np.pi))
+        
+        return log_prob
 
 
 @dataclass

@@ -14,6 +14,7 @@ providing domain-specific model definitions.
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
+import sys
 
 from persiste.core.trees import TreeStructure
 from persiste.core.pruning import (
@@ -194,7 +195,184 @@ class GeneContentModel(TreeLikelihoodModel):
             
             total_ll += result.log_likelihood
         
+        # Add constraint prior (Fix #3: hierarchical shrinkage)
+        # This implements MAP estimation instead of pure MLE
+        total_ll += self.constraint.log_prior()
+        
+        # Add weak prior on baseline rates for regularization
+        # This provides mild stability without changing behavior significantly
+        # Prior: log_gain ~ N(0, 4), log_loss ~ N(0, 4)
+        # This is very weak (σ=2 on log scale) and centered at rate=1
+        baseline_prior = 0.0
+        baseline_prior += -0.5 * (parameters['log_gain'] ** 2) / 4.0
+        baseline_prior += -0.5 * (parameters['log_loss'] ** 2) / 4.0
+        total_ll += baseline_prior
+        
         return total_ll
+
+
+@dataclass
+class BaselineDiagnostics:
+    """
+    Diagnostic information about baseline model.
+    
+    Helps users catch nonsense estimates before proceeding to constraint testing.
+    """
+    gain_rate: float
+    loss_rate: float
+    equilibrium_presence: float
+    mean_transitions_per_branch: float
+    log_likelihood: float
+    n_families: int
+    n_tips: int
+    
+    def print_report(self, file=None):
+        """Print diagnostic report."""
+        if file is None:
+            file = sys.stdout
+        
+        print("\nBaseline diagnostics:", file=file)
+        print("  Gain rate: {0:.4f}".format(self.gain_rate), file=file)
+        print("  Loss rate: {0:.4f}".format(self.loss_rate), file=file)
+        print("  Equilibrium presence: {0:.4f}".format(self.equilibrium_presence), file=file)
+        print("  Mean transitions per branch: {0:.2f}".format(self.mean_transitions_per_branch), file=file)
+        print("  Log-likelihood: {0:.2f}".format(self.log_likelihood), file=file)
+        print("  Data: {0} families, {1} tips".format(self.n_families, self.n_tips), file=file)
+        print(file=file)
+        
+        # Data sufficiency diagnostic
+        self._print_sufficiency_warning(file=file)
+    
+    def _print_sufficiency_warning(self, file=None):
+        """Print data sufficiency warning if needed."""
+        if file is None:
+            file = sys.stdout
+        
+        # Estimate total transitions across tree
+        total_rate = self.gain_rate + self.loss_rate
+        estimated_transitions = self.n_families * total_rate * self.mean_transitions_per_branch
+        
+        print("Data sufficiency check:", file=file)
+        print("  Families: {0}".format(self.n_families), file=file)
+        print("  Tips: {0}".format(self.n_tips), file=file)
+        print("  Estimated transitions: ~{0:.0f}".format(estimated_transitions), file=file)
+        
+        # Warn if data is insufficient (no hard stop, just honesty)
+        if self.n_families < 50 or self.n_tips < 6:
+            print("  ⚠ Warning: High variance regime – expect wide confidence intervals", file=file)
+            print("  ⚠ Recommended: 100+ families, 8+ tips for robust inference", file=file)
+        elif self.n_families < 100 or self.n_tips < 8:
+            print("  ⚠ Note: Moderate power – results should be interpreted cautiously", file=file)
+            print("  ⚠ Recommended: 100+ families, 8+ tips for robust inference", file=file)
+        else:
+            print("  ✓ Data size is adequate for reliable inference", file=file)
+        
+        print(file=file)
+        
+        # Baseline-sensitivity diagnostic (warning only, no correction)
+        self._print_baseline_sensitivity_warning(file=file)
+    
+    def _print_baseline_sensitivity_warning(self, file=None):
+        """Print baseline-sensitivity warning."""
+        if file is None:
+            file = sys.stdout
+        
+        print("Baseline-sensitivity check:", file=file)
+        
+        # Check for extreme rates (potential misspecification)
+        if self.gain_rate < 0.01 or self.loss_rate < 0.01:
+            print("  ⚠ Warning: Very low baseline rates detected", file=file)
+            print("  ⚠ This may indicate model misspecification or insufficient data", file=file)
+            print("  ⚠ Constraint tests may be unreliable", file=file)
+        elif self.gain_rate > 100 or self.loss_rate > 100:
+            print("  ⚠ Warning: Very high baseline rates detected", file=file)
+            print("  ⚠ This may indicate model misspecification or data quality issues", file=file)
+            print("  ⚠ Constraint tests may be unreliable", file=file)
+        else:
+            # Check for imbalanced rates
+            rate_ratio = max(self.gain_rate, self.loss_rate) / max(min(self.gain_rate, self.loss_rate), 1e-10)
+            if rate_ratio > 100:
+                print("  ⚠ Note: Highly imbalanced gain/loss rates (ratio: {0:.1f})".format(rate_ratio), file=file)
+                print("  ⚠ Results may be sensitive to baseline specification", file=file)
+            else:
+                print("  ✓ Baseline rates are in reasonable range", file=file)
+        
+        print(file=file)
+
+
+@dataclass
+class ComparisonResult:
+    """
+    Result of comparing alternative model to null.
+    
+    Provides interpretation guidance following HyPhy conventions.
+    """
+    null_result: 'MLEResult'
+    alt_result: 'MLEResult'
+    lrt_result: 'LRTResult'
+    delta_ll: float
+    delta_aic: float
+    evidence_strength: str  # 'none', 'weak', 'moderate', 'strong'
+    
+    def print_report(self, file=None):
+        """Print comparison report with interpretation guidance."""
+        if file is None:
+            file = sys.stdout
+        
+        print("\nNull vs alternative:", file=file)
+        print("  ΔLL = {0:.2f}".format(self.delta_ll), file=file)
+        
+        # Emphasize ΔLL interpretation (HyPhy-style)
+        if self.delta_ll < 2.0:
+            print("  → Insufficient evidence", file=file)
+        elif self.delta_ll < 5.0:
+            print("  → Weak/exploratory evidence", file=file)
+        elif self.delta_ll < 10.0:
+            print("  → Moderate evidence", file=file)
+        else:
+            print("  → Strong evidence", file=file)
+        
+        print(file=file)
+        
+        # Show constraint parameter but de-emphasize it
+        constraint_params = {k: v for k, v in self.alt_result.parameters.items() 
+                           if k not in ['log_gain', 'log_loss']}
+        if constraint_params:
+            print("Constraint parameters (do not interpret alone):", file=file)
+            for param_name, param_value in constraint_params.items():
+                print("  {0} = {1:.4f}".format(param_name, param_value), file=file)
+            print(file=file)
+        
+        print("Model comparison details:", file=file)
+        print("  Null LL:  {0:.2f}".format(self.null_result.log_likelihood), file=file)
+        print("  Alt LL:   {0:.2f}".format(self.alt_result.log_likelihood), file=file)
+        print("  ΔAIC:     {0:.2f}".format(self.delta_aic), file=file)
+        print("  p-value:  {0:.4f}".format(self.lrt_result.pvalue), file=file)
+        print(file=file)
+        
+        print("Interpretation guidance:", file=file)
+        print("  Evidence strength: {0}".format(self.evidence_strength.upper()), file=file)
+        
+        if self.evidence_strength == 'none':
+            print("  → No evidence for constraint effect", file=file)
+            print("  → Null model preferred", file=file)
+        elif self.evidence_strength == 'weak':
+            print("  → Weak/exploratory evidence", file=file)
+            print("  → Interpret with caution", file=file)
+        elif self.evidence_strength == 'moderate':
+            print("  → Moderate evidence for constraint", file=file)
+            print("  → Consider biological plausibility", file=file)
+        else:  # strong
+            print("  → Strong evidence for constraint", file=file)
+            print("  → Effect likely real", file=file)
+        
+        print(file=file)
+        print("Guidance thresholds (following HyPhy conventions):", file=file)
+        print("  ΔLL < 2:    no evidence", file=file)
+        print("  ΔLL 2-5:    weak/exploratory", file=file)
+        print("  ΔLL 5-10:   moderate", file=file)
+        print("  ΔLL > 10:   strong evidence", file=file)
+        print(file=file)
 
 
 class GeneContentInference:
@@ -204,21 +382,21 @@ class GeneContentInference:
     Provides convenient methods for:
     1. Fitting null and alternative models
     2. Likelihood ratio testing
-    3. Model comparison
+    3. Model comparison with interpretation guidance
+    4. Baseline diagnostics
     
     Usage:
         inference = GeneContentInference(data)
         
-        # Fit null model
-        null_result = inference.fit_null()
+        # Get baseline diagnostics first
+        diagnostics = inference.get_baseline_diagnostics()
+        diagnostics.print_report()
         
-        # Fit with retention constraint
-        alt_result = inference.fit_with_constraint(
+        # Compare to null (recommended)
+        result = inference.compare_to_null(
             RetentionBiasConstraint(retained_families={'OG0001'})
         )
-        
-        # Test significance
-        lrt = inference.likelihood_ratio_test(null_result, alt_result)
+        result.print_report()
     """
     
     def __init__(
@@ -235,6 +413,50 @@ class GeneContentInference:
         """
         self.data = data
         self.use_jax = use_jax
+        self._baseline_diagnostics = None
+    
+    def get_baseline_diagnostics(self, verbose: bool = True) -> BaselineDiagnostics:
+        """
+        Get baseline model diagnostics.
+        
+        This should be run BEFORE fitting constraints to catch nonsense estimates.
+        
+        Args:
+            verbose: Whether to print diagnostic report
+            
+        Returns:
+            BaselineDiagnostics with rate estimates and quality metrics
+        """
+        if self._baseline_diagnostics is None:
+            # Fit null model
+            null_result = self.fit_null()
+            
+            # Extract rates
+            gain_rate = np.exp(null_result.parameters['log_gain'])
+            loss_rate = np.exp(null_result.parameters['log_loss'])
+            
+            # Compute diagnostics
+            total_rate = gain_rate + loss_rate
+            equilibrium_presence = gain_rate / total_rate if total_rate > 0 else 0.5
+            
+            # Mean branch length
+            mean_branch_length = self.data.tree.branch_lengths[self.data.tree.branch_lengths > 0].mean()
+            mean_transitions = total_rate * mean_branch_length
+            
+            self._baseline_diagnostics = BaselineDiagnostics(
+                gain_rate=gain_rate,
+                loss_rate=loss_rate,
+                equilibrium_presence=equilibrium_presence,
+                mean_transitions_per_branch=mean_transitions,
+                log_likelihood=null_result.log_likelihood,
+                n_families=self.data.n_families,
+                n_tips=len(self.data.taxon_names),
+            )
+        
+        if verbose:
+            self._baseline_diagnostics.print_report()
+        
+        return self._baseline_diagnostics
     
     def fit_null(
         self,
@@ -323,3 +545,57 @@ class GeneContentInference:
         lrt_result = self.likelihood_ratio_test(null_result, alt_result, alpha=alpha)
         
         return null_result, alt_result, lrt_result
+    
+    def compare_to_null(
+        self,
+        constraint: GeneContentConstraint,
+        alpha: float = 0.05,
+        verbose: bool = True,
+    ) -> ComparisonResult:
+        """
+        Compare constraint model to null with interpretation guidance.
+        
+        This is the RECOMMENDED way to test constraints. It:
+        1. Fits both null and alternative models
+        2. Performs likelihood ratio test
+        3. Provides interpretation guidance based on ΔLL
+        4. Prevents over-interpretation of θ̂
+        
+        Args:
+            constraint: GeneContentConstraint for alternative model
+            alpha: Significance level
+            verbose: Whether to print comparison report
+            
+        Returns:
+            ComparisonResult with interpretation guidance
+        """
+        # Fit both models
+        null_result, alt_result, lrt_result = self.fit_and_test(constraint, alpha=alpha)
+        
+        # Compute deltas
+        delta_ll = alt_result.log_likelihood - null_result.log_likelihood
+        delta_aic = null_result.aic - alt_result.aic  # Positive favors alternative
+        
+        # Classify evidence strength (HyPhy-style thresholds)
+        if delta_ll < 2.0:
+            evidence_strength = 'none'
+        elif delta_ll < 5.0:
+            evidence_strength = 'weak'
+        elif delta_ll < 10.0:
+            evidence_strength = 'moderate'
+        else:
+            evidence_strength = 'strong'
+        
+        result = ComparisonResult(
+            null_result=null_result,
+            alt_result=alt_result,
+            lrt_result=lrt_result,
+            delta_ll=delta_ll,
+            delta_aic=delta_aic,
+            evidence_strength=evidence_strength,
+        )
+        
+        if verbose:
+            result.print_report()
+        
+        return result

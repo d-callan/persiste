@@ -1,0 +1,74 @@
+================================================================================
+GENECONTENT PLUGIN VALIDATION REPORT
+================================================================================
+Generated: 2025-12-28 18:27:29
+================================================================================
+
+SUMMARY
+--------------------------------------------------------------------------------
+Total tests: 6
+Passed:      4
+Failed:      2
+
+[FAIL] 2 TESTS FAILED
+
+Review failures before proceeding to real data.
+
+================================================================================
+DETAILED RESULTS
+================================================================================
+
+[INFO] ================================================================================
+[INFO] GENECONTENT PLUGIN VALIDATION SUITE
+[INFO] ================================================================================
+[INFO] 
+LEVEL 1: MECHANICAL CORRECTNESS
+[INFO] ================================================================================
+[INFO] Test 1.1: Likelihood computation
+[INFO]   Log-likelihood: -1.506559
+[PASS]   Likelihood computation works correctly
+[INFO] Test 1.2: Branch length scaling
+[INFO]   Unit branches:    -1.506559
+[INFO]   Doubled branches: -1.504084
+[PASS]   Branch length scaling works correctly
+[INFO] 
+LEVEL 2: STATISTICAL HONESTY
+[INFO] ================================================================================
+[INFO] Test 2.1: Null recovery
+[INFO]   Simulating 30 families with θ = 0
+[INFO]   True θ:     0.0
+[INFO]   Estimated θ̂: -1.3890
+[FAIL]   |θ̂| = 1.3890 >= 0.2
+[INFO] Test 2.2: Parameter recovery
+[INFO]   True θ:     -1.0000
+[INFO]   Estimated θ̂: -0.7086
+[PASS]   Relative error: 0.2914 < 0.5
+[INFO] 
+LEVEL 3: IDENTIFIABILITY
+[INFO] ================================================================================
+[INFO] Test 3.1: Profile likelihood curvature
+[INFO]   True θ:  -1.00
+[INFO]   MLE θ̂:   -1.20
+[PASS]   Profile likelihood shows clear curvature
+[INFO]   Plot saved to: /home/dcallan-adm/Documents/veg/persiste/src/persiste/plugins/genecontent/validation/outputs/profile_likelihood_20251228_182729.png
+[INFO] 
+LEVEL 4: BASELINE SENSITIVITY
+[INFO] ================================================================================
+[INFO] Test 4.1: Baseline misspecification
+[INFO]   True θ:      -1.0000
+[INFO]   Misspecified θ̂: -0.1000
+[FAIL]   Relative bias: 0.9000 >= 0.3
+[INFO] 
+================================================================================
+[INFO] VALIDATION SUMMARY
+[INFO] ================================================================================
+[INFO] Total tests: 6
+[INFO] Passed:      4
+[INFO] Failed:      2
+[INFO] 
+[FAIL] 2 TESTS FAILED
+[INFO] Review failures before proceeding to real data.
+
+================================================================================
+END OF REPORT
+================================================================================
