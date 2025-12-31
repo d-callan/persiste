@@ -126,18 +126,25 @@ class AmplificationBiasConstraint(CopyNumberConstraint):
         "Do pathogenic lineages favor copy number increases?"
     
     Effect:
-        - Boosts amplification (1→2, 2→3)
-        - Does NOT affect contraction (asymmetric)
-        - Does NOT affect gain/loss
+        - Boosts amplification (1→2, 2→3) by exp(θ)
+        - Suppresses contraction (2→1, 3→2) by exp(-θ)
+        - Does NOT affect gain/loss (0↔1) - gene birth ≠ amplification
+        - Bidirectional for stronger signal
     
     Parameter interpretation:
-        θ < 0  → amplification suppressed
+        θ < 0  → amplification suppressed, contraction favored
         θ = 0  → neutral (baseline rates)
-        θ > 0  → amplification favored
+        θ > 0  → amplification favored, contraction suppressed
     
     Affected transitions:
-        1→2 (amplify to low-multi)
-        2→3 (amplify to high-multi)
+        1→2 (amplify to low-multi) × exp(θ)
+        2→3 (amplify to high-multi) × exp(θ)
+        2→1 (contract from low-multi) × exp(-θ)
+        3→2 (contract from high-multi) × exp(-θ)
+    
+    NOT affected:
+        0→1 (gene birth) - biologically distinct from amplification
+        1→0 (gene loss) - not part of amplification dynamics
     
     Use cases:
         - Drug resistance genes (expect θ > 0)
@@ -145,9 +152,11 @@ class AmplificationBiasConstraint(CopyNumberConstraint):
         - Efflux pumps (expect θ > 0)
         - Virulence factors (expect θ > 0)
     
-    Design note:
-        This is NOT symmetric. Amplification and contraction
-        are biologically distinct processes.
+    Design rationale:
+        1. Bidirectional: amplification up AND contraction down
+        2. State-specific: only affects multi-copy transitions (1↔2, 2↔3)
+        3. Excludes gene birth (0→1): prevents signal dilution
+        4. Biological precision: amplification ≠ gene birth
     """
     
     def get_rate_multipliers(
@@ -159,18 +168,21 @@ class AmplificationBiasConstraint(CopyNumberConstraint):
         """
         Get amplification bias multipliers.
         
-        Only amplification transitions affected.
+        Bidirectional: amplification up, contraction down.
         """
-        multiplier = np.exp(theta)
+        amplify_multiplier = np.exp(theta)
+        contract_multiplier = np.exp(-theta)
         
         return {
-            (1, 2): multiplier,  # amplify low
-            (2, 3): multiplier,  # amplify high
+            (1, 2): amplify_multiplier,   # amplify low
+            (2, 3): amplify_multiplier,   # amplify high
+            (2, 1): contract_multiplier,  # contract low
+            (3, 2): contract_multiplier,  # contract high
         }
     
     def get_affected_transitions(self) -> Set[Tuple[int, int]]:
-        """Only amplification transitions."""
-        return {(1, 2), (2, 3)}
+        """Amplification and contraction transitions."""
+        return {(1, 2), (2, 3), (2, 1), (3, 2)}
 
 
 @dataclass

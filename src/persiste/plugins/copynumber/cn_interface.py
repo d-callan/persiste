@@ -9,7 +9,6 @@ import numpy as np
 from pathlib import Path
 
 from persiste.core.trees import Tree
-from persiste.core.pruning import felsenstein_pruning
 from persiste.plugins.copynumber.states.cn_states import (
     CopyNumberState,
     get_sparse_transition_graph,
@@ -54,18 +53,61 @@ def compute_family_likelihood(
     Returns:
         Log-likelihood for this family
     """
+    from scipy.linalg import expm
+    
     # Get tip likelihoods from observation model
     tip_likelihoods = obs_model.get_tip_likelihoods_matrix(family_data)
     
-    # Run Felsenstein pruning
-    # Note: This uses the core PersiSTE pruning machinery
-    log_likelihood = felsenstein_pruning(
-        tree=tree,
-        rate_matrix=rate_matrix,
-        tip_likelihoods=tip_likelihoods,
-    )
+    # Run Felsenstein pruning using the simple Tree interface
+    # This is the production code path
+    n_states = rate_matrix.shape[0]
+    n_nodes = len(tree.nodes)
     
-    return log_likelihood
+    # Initialize conditionals
+    conditionals = {}
+    
+    # Set tip conditionals
+    # Map leaf nodes to tip data indices
+    leaves = tree.get_leaves()
+    for taxon_idx, leaf_id in enumerate(leaves):
+        conditionals[leaf_id] = tip_likelihoods[taxon_idx, :]
+    
+    # Postorder traversal
+    def postorder(node_id):
+        if tree.is_leaf(node_id):
+            return
+        
+        children = tree.get_children(node_id)
+        
+        # Process children first
+        for child_id in children:
+            postorder(child_id)
+        
+        # Combine children
+        if len(children) >= 2:
+            child1_id = children[0]
+            child2_id = children[1]
+            
+            # Get transition matrices P(t) = exp(Qt)
+            t1 = tree.get_branch_length(child1_id)
+            t2 = tree.get_branch_length(child2_id)
+            
+            P1 = expm(rate_matrix * t1)
+            P2 = expm(rate_matrix * t2)
+            
+            # Combine: L_parent[state] = (Σ P1[state,j] * L_child1[j]) * (Σ P2[state,k] * L_child2[k])
+            term1 = P1.T @ conditionals[child1_id]
+            term2 = P2.T @ conditionals[child2_id]
+            
+            conditionals[node_id] = term1 * term2
+    
+    postorder(tree.root)
+    
+    # Compute likelihood at root with uniform prior
+    root_prior = np.ones(n_states) / n_states
+    likelihood = np.sum(root_prior * conditionals[tree.root])
+    
+    return np.log(likelihood + 1e-300)
 
 
 def fit(

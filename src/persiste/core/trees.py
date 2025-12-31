@@ -343,6 +343,64 @@ class TreeStructure:
         return f"TreeStructure({self.n_tips} tips, {self.n_nodes} nodes)"
 
 
+class Tree:
+    """
+    Simple tree class for validation and testing.
+    
+    This is a lightweight wrapper that allows programmatic tree construction
+    without parsing Newick strings.
+    """
+    
+    def __init__(self):
+        self.nodes = []
+        self.node_counter = 0
+        self.root = None
+    
+    def add_node(self, parent: Optional[int] = None, branch_length: float = 1.0, 
+                 is_leaf: bool = False, name: Optional[str] = None) -> int:
+        """Add a node to the tree."""
+        node_id = self.node_counter
+        self.node_counter += 1
+        
+        node = TreeNode(
+            id=node_id,
+            name=name,
+            parent_id=parent,
+            branch_length=branch_length,
+            is_tip=is_leaf,
+        )
+        
+        self.nodes.append(node)
+        
+        # Update parent's children
+        if parent is not None:
+            self.nodes[parent].children_ids.append(node_id)
+        else:
+            self.root = node_id
+        
+        return node_id
+    
+    def get_children(self, node_id: int) -> List[int]:
+        """Get children of a node."""
+        return self.nodes[node_id].children_ids
+    
+    def get_branch_length(self, node_id: int) -> float:
+        """Get branch length of a node."""
+        return self.nodes[node_id].branch_length
+    
+    def is_leaf(self, node_id: int) -> bool:
+        """Check if node is a leaf."""
+        return self.nodes[node_id].is_tip
+    
+    def get_node_name(self, node_id: int) -> str:
+        """Get name of a node."""
+        return self.nodes[node_id].name or f"node_{node_id}"
+    
+    def get_leaves(self) -> List[int]:
+        """Get all leaf node IDs."""
+        return [n.id for n in self.nodes if n.is_tip]
+
+
 def load_tree(filepath: Union[str, Path], backend: str = "auto") -> TreeStructure:
     """
     Load a phylogenetic tree from file.
