@@ -1,0 +1,9 @@
+_seqFile /home/dcallan-adm/Documents/veg/persiste/src/tool_comparison_output/gloome_run/sequences.fa
+_treeFile /home/dcallan-adm/Documents/veg/persiste/src/tool_comparison_output/gloome_run/tree.nwk
+_outDir /home/dcallan-adm/Documents/veg/persiste/src/tool_comparison_output/gloome_run
+_logFile gainLoss.log
+_gainLossDist 1
+_numberOfGainCategories 1
+_numberOfLossCategories 1
+_maxNumOfIterationsModel 10
+_performOptimizations 1

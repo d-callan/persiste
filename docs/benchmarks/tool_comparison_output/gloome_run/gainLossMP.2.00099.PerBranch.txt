@@ -1,0 +1,22 @@
+# print with MP based on the cost matrix: 
+#  0->0 =0
+#  0->1 =2.001
+#  1->0 =1
+#  1->1 =0
+# MP Gain and Loss counts
+branch	branchLength	distance2root	distance2NearestOTU	numOfNodes2NearestOTU	exp01	exp10
+N1	-1	0	3	3	0	0
+N2	1	1	2	2	0	12
+N3	1	2	1	1	0	43
+tip0	1	3	0	0	3	42
+tip1	1	3	0	0	0	47
+N4	1	2	1	1	0	37
+tip2	1	3	0	0	3	49
+tip3	1	3	0	0	3	50
+N5	1	1	2	2	0	18
+N6	1	2	1	1	0	43
+tip4	1	3	0	0	1	54
+tip5	1	3	0	0	2	44
+N7	1	2	1	1	0	43
+tip6	1	3	0	0	1	53
+tip7	1	3	0	0	2	35

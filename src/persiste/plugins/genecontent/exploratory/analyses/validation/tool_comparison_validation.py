@@ -24,6 +24,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent.parent))
 
 from persiste.core.trees import TreeStructure
+from persiste.core.simulation import simulate_binary_evolution
 from persiste.plugins.genecontent.inference.gene_inference import GeneContentData
 from persiste.plugins.genecontent.analyses.standard_analyses import GeneContentAnalysis
 
@@ -355,9 +356,15 @@ class ToolComparisonSuite:
         for rep in range(n_replicates):
             self.log(f"\n--- Replicate {rep+1}/{n_replicates} ---")
             
-            # Simulate presence/absence using simple random data
-            np.random.seed(42 + rep)
-            presence_matrix = np.random.binomial(1, 0.5, size=(n_tips, n_families))
+            # Simulate presence/absence using true gain/loss rates
+            rng = np.random.default_rng(42 + rep)
+            presence_matrix = simulate_binary_evolution(
+                tree=tree,
+                gain_rate=true_gain,
+                loss_rate=true_loss,
+                n_sites=n_families,
+                rng=rng
+            )
             family_names = [f"fam{i}" for i in range(n_families)]
             
             # Test GeneContent
@@ -587,20 +594,23 @@ class ToolComparisonSuite:
         for rep in range(n_replicates):
             self.log(f"\n--- Replicate {rep+1}/{n_replicates} ---")
             
-            # Simulate data with retention bias
-            np.random.seed(100 + rep)
-            presence_matrix = np.zeros((n_tips, n_families_total), dtype=int)
+            # Simulate data with retention bias using consolidated simulation utility
+            rng = np.random.default_rng(100 + rep)
             
-            # Simple simulation: random presence/absence with different frequencies
-            for fam_idx in range(n_families_total):
-                if fam_idx < n_families_retained:
-                    # Retained families: higher presence frequency
-                    freq = true_gain / (true_gain + true_loss_retained)
-                else:
-                    # Normal families: lower presence frequency
-                    freq = true_gain / (true_gain + true_loss_normal)
-                
-                presence_matrix[:, fam_idx] = np.random.binomial(1, freq, size=n_tips)
+            # Create site-specific rates: first 20 families have reduced loss
+            site_specific_rates = {}
+            for fam_idx in range(n_families_retained):
+                site_specific_rates[fam_idx] = (true_gain, true_loss_retained)
+            # Remaining families use default rates (true_gain, true_loss_normal)
+            
+            presence_matrix = simulate_binary_evolution(
+                tree=tree,
+                gain_rate=true_gain,
+                loss_rate=true_loss_normal,
+                n_sites=n_families_total,
+                rng=rng,
+                site_specific_rates=site_specific_rates
+            )
             
             family_names = [f"fam{i}" for i in range(n_families_total)]
             retained_families = family_names[:n_families_retained]

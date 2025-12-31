@@ -471,17 +471,20 @@ class SimpleBinaryTransitionProvider:
         loss_rate: Rate of 1 → 0 transition
     """
     
-    def __init__(self, gain_rate: float, loss_rate: float):
+    def __init__(self, gain_rate: float, loss_rate: float, use_cache: bool = True):
         """
         Initialize binary transition provider.
         
         Args:
             gain_rate: Rate of gaining (0 → 1)
             loss_rate: Rate of losing (1 → 0)
+            use_cache: Whether to cache transition matrices (default: True)
         """
         self.gain_rate = gain_rate
         self.loss_rate = loss_rate
         self._n_states = 2
+        self._use_cache = use_cache
+        self._cache = {} if use_cache else None
     
     @property
     def n_states(self) -> int:
@@ -504,24 +507,33 @@ class SimpleBinaryTransitionProvider:
         """
         Compute P(t) for binary model.
         
-        Closed-form solution for 2-state CTMC.
+        Closed-form solution for 2-state CTMC with optional caching.
+        Uses global LRU cache for better performance across families.
         """
-        t = branch_length
-        λ = self.gain_rate
-        μ = self.loss_rate
-        total = λ + μ
-        
-        if total < 1e-10:
-            return np.eye(2)
-        
-        exp_term = np.exp(-total * t)
-        
-        p00 = (μ + λ * exp_term) / total
-        p01 = (λ - λ * exp_term) / total
-        p10 = (μ - μ * exp_term) / total
-        p11 = (λ + μ * exp_term) / total
-        
-        return np.array([[p00, p01], [p10, p11]])
+        if self._use_cache:
+            # Use global cache (shared across all families with same rates)
+            from .transition_cache import get_binary_transition_matrix
+            return get_binary_transition_matrix(
+                self.gain_rate, self.loss_rate, branch_length, use_cache=True
+            )
+        else:
+            # Direct computation without caching
+            t = branch_length
+            λ = self.gain_rate
+            μ = self.loss_rate
+            total = λ + μ
+            
+            if total < 1e-10:
+                return np.eye(2)
+            
+            exp_term = np.exp(-total * t)
+            
+            p00 = (μ + λ * exp_term) / total
+            p01 = (λ - λ * exp_term) / total
+            p10 = (μ - μ * exp_term) / total
+            p11 = (λ + μ * exp_term) / total
+            
+            return np.array([[p00, p01], [p10, p11]])
 
 
 class ArrayTipConditionalProvider:

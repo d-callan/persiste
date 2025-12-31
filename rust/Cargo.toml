@@ -1,0 +1,19 @@
+[package]
+name = "persiste-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "persiste_rust"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.20", features = ["extension-module"] }
+numpy = "0.20"
+rayon = "1.8"
+ndarray = "0.15"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

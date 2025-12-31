@@ -31,6 +31,13 @@ from persiste.core.tree_inference import (
     likelihood_ratio_test,
     model_selection,
 )
+from persiste.core.simulation import (
+    simulate_binary_evolution,
+    simulate_binary_evolution_vectorized,
+    compute_equilibrium_frequencies,
+    compute_stationary_frequency,
+    compute_mean_transitions,
+)
 
 __all__ = [
     "StateSpace",
@@ -58,4 +65,9 @@ __all__ = [
     "LRTResult",
     "likelihood_ratio_test",
     "model_selection",
+    "simulate_binary_evolution",
+    "simulate_binary_evolution_vectorized",
+    "compute_equilibrium_frequencies",
+    "compute_stationary_frequency",
+    "compute_mean_transitions",
 ]

@@ -1,0 +1,266 @@
+======================================================================
+GLOOME SCALING TEST
+======================================================================
+
+Loading full dataset...
+  Full dataset: 1,324 × 25,420
+
+======================================================================
+TESTING SIZE: 20 strains × 100 genes
+======================================================================
+
+Subset created: 20 × 100
+
+======================================================================
+GENECONTENT ANALYSIS
+======================================================================
+
+Inferring tree...
+  ✓ Tree inferred in 0.13s
+Fitting model...
+  ✓ Model fitted in 0.01s
+
+Results:
+  Gain rate: 0.161376
+  Loss rate: 0.731175
+  π₁: 0.180803
+  Total time: 0.14s
+
+======================================================================
+GLOOME WITH INTERNAL TREE INFERENCE
+======================================================================
+
+Writing sequences: results/gloome_scaling/20x100/gloome_own_tree/sequences.fa
+Running GLOOME (will infer tree)...
+  Strains: 20
+  Genes: 100
+  ✓ GLOOME completed in 0.28s
+
+Results:
+  Gain rate: 0.326233
+  Loss rate: 1.532650
+  π₁: 0.175499
+  Runtime: 0.28s
+
+======================================================================
+GLOOME WITH GENECONTENT TREE
+======================================================================
+
+Writing sequences: results/gloome_scaling/20x100/gloome_gc_tree/sequences.fa
+Running GLOOME (with provided tree)...
+  Strains: 20
+  Genes: 100
+  ✓ GLOOME completed in 0.19s
+
+Results:
+  Gain rate: 0.326233
+  Loss rate: 1.532650
+  π₁: 0.175499
+  Runtime: 0.19s
+
+----------------------------------------------------------------------
+COMPARISON
+----------------------------------------------------------------------
+
+Tool                           Gain         Loss         π₁           Time      
+----------------------------------------------------------------------
+GeneContent                    0.1614       0.7312       0.1808       0.14      s
+GLOOME (own tree)              0.3262       1.5327       0.1755       0.28      s
+GLOOME (GC tree)               0.3262       1.5327       0.1755       0.19      s
+
+======================================================================
+TESTING SIZE: 50 strains × 500 genes
+======================================================================
+
+Subset created: 50 × 500
+
+======================================================================
+GENECONTENT ANALYSIS
+======================================================================
+
+Inferring tree...
+  ✓ Tree inferred in 0.01s
+Fitting model...
+  ✓ Model fitted in 0.03s
+
+Results:
+  Gain rate: 0.142425
+  Loss rate: 0.763585
+  π₁: 0.157200
+  Total time: 0.04s
+
+======================================================================
+GLOOME WITH INTERNAL TREE INFERENCE
+======================================================================
+
+Writing sequences: results/gloome_scaling/50x500/gloome_own_tree/sequences.fa
+Running GLOOME (will infer tree)...
+  Strains: 50
+  Genes: 500
+  ✓ GLOOME completed in 4.63s
+
+Results:
+  Gain rate: 0.315787
+  Loss rate: 1.583340
+  π₁: 0.166280
+  Runtime: 4.63s
+
+======================================================================
+GLOOME WITH GENECONTENT TREE
+======================================================================
+
+Writing sequences: results/gloome_scaling/50x500/gloome_gc_tree/sequences.fa
+Running GLOOME (with provided tree)...
+  Strains: 50
+  Genes: 500
+  ✓ GLOOME completed in 2.67s
+
+Results:
+  Gain rate: 0.315787
+  Loss rate: 1.583340
+  π₁: 0.166280
+  Runtime: 2.67s
+
+----------------------------------------------------------------------
+COMPARISON
+----------------------------------------------------------------------
+
+Tool                           Gain         Loss         π₁           Time      
+----------------------------------------------------------------------
+GeneContent                    0.1424       0.7636       0.1572       0.04      s
+GLOOME (own tree)              0.3158       1.5833       0.1663       4.63      s
+GLOOME (GC tree)               0.3158       1.5833       0.1663       2.67      s
+
+======================================================================
+TESTING SIZE: 100 strains × 1000 genes
+======================================================================
+
+Subset created: 100 × 1000
+
+======================================================================
+GENECONTENT ANALYSIS
+======================================================================
+
+Inferring tree...
+  ✓ Tree inferred in 0.02s
+Fitting model...
+  ✓ Model fitted in 0.08s
+
+Results:
+  Gain rate: 0.129459
+  Loss rate: 0.814868
+  π₁: 0.137091
+  Total time: 0.10s
+
+======================================================================
+GLOOME WITH INTERNAL TREE INFERENCE
+======================================================================
+
+Writing sequences: results/gloome_scaling/100x1000/gloome_own_tree/sequences.fa
+Running GLOOME (will infer tree)...
+  Strains: 100
+  Genes: 1000
+  ✓ GLOOME completed in 29.95s
+
+Results:
+  Gain rate: 0.314910
+  Loss rate: 1.587750
+  π₁: 0.165510
+  Runtime: 29.95s
+
+======================================================================
+GLOOME WITH GENECONTENT TREE
+======================================================================
+
+Writing sequences: results/gloome_scaling/100x1000/gloome_gc_tree/sequences.fa
+Running GLOOME (with provided tree)...
+  Strains: 100
+  Genes: 1000
+  ✓ GLOOME completed in 14.43s
+
+Results:
+  Gain rate: 0.314910
+  Loss rate: 1.587750
+  π₁: 0.165510
+  Runtime: 14.43s
+
+----------------------------------------------------------------------
+COMPARISON
+----------------------------------------------------------------------
+
+Tool                           Gain         Loss         π₁           Time      
+----------------------------------------------------------------------
+GeneContent                    0.1295       0.8149       0.1371       0.10      s
+GLOOME (own tree)              0.3149       1.5877       0.1655       29.95     s
+GLOOME (GC tree)               0.3149       1.5877       0.1655       14.43     s
+
+======================================================================
+TESTING SIZE: 200 strains × 2000 genes
+======================================================================
+
+Subset created: 200 × 2000
+
+======================================================================
+GENECONTENT ANALYSIS
+======================================================================
+
+Inferring tree...
+  ✓ Tree inferred in 0.16s
+Fitting model...
+  ✓ Model fitted in 0.22s
+
+Results:
+  Gain rate: 0.129849
+  Loss rate: 0.809852
+  π₁: 0.138181
+  Total time: 0.38s
+
+======================================================================
+GLOOME WITH INTERNAL TREE INFERENCE
+======================================================================
+
+Writing sequences: results/gloome_scaling/200x2000/gloome_own_tree/sequences.fa
+Running GLOOME (will infer tree)...
+  Strains: 200
+  Genes: 2000
+  ✓ GLOOME completed in 214.73s
+
+Results:
+  Gain rate: 0.311758
+  Loss rate: 1.603810
+  π₁: 0.162750
+  Runtime: 214.73s
+
+======================================================================
+GLOOME WITH GENECONTENT TREE
+======================================================================
+
+Writing sequences: results/gloome_scaling/200x2000/gloome_gc_tree/sequences.fa
+Running GLOOME (with provided tree)...
+  Strains: 200
+  Genes: 2000
+  ✓ GLOOME completed in 61.12s
+
+Results:
+  Gain rate: 0.311758
+  Loss rate: 1.603810
+  π₁: 0.162750
+  Runtime: 61.12s
+
+----------------------------------------------------------------------
+COMPARISON
+----------------------------------------------------------------------
+
+Tool                           Gain         Loss         π₁           Time      
+----------------------------------------------------------------------
+GeneContent                    0.1298       0.8099       0.1382       0.38      s
+GLOOME (own tree)              0.3118       1.6038       0.1627       214.73    s
+GLOOME (GC tree)               0.3118       1.6038       0.1627       61.12     s
+
+======================================================================
+SCALING TEST COMPLETE
+======================================================================
+/home/dcallan-adm/Documents/veg/persiste/src/persiste/core/tree_inference.py:249: RuntimeWarning: invalid value encountered in sqrt
+  se = np.sqrt(np.diag(cov))
+
+

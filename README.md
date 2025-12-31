@@ -13,9 +13,10 @@ PERSISTE detects constraint by comparing observed transition rates against a bas
 - **Phylogenetics** (`persiste-phylo`): FEL-like selection analysis as a **non-rigorous proof-of-concept** that the reframed framework can reproduce HyPhy-adjacent workflows. It is **not** intended to be a drop-in replacement for HyPhy.
 - **Assembly Theory** (`persiste-assembly`): an exploratory sandbox driven by curiosity about assembly theory, and an example of framework flexibility.
 
+- **Gene content** (`persiste-genecontent`): Pangenome gain/loss dynamics with strain heterogeneity framework. **Production-ready** for research use.
+
 Coming soon (exploratory):
 
-- **Gene content**: gain/loss dynamics
 - **Copy number**: copy number dynamics
 
 ## What this project is (and isn’t)
@@ -106,20 +107,77 @@ lrt = model.test(
 print(f"p-value: {lrt.pvalue}")
 ```
 
-## Documentation
+## GeneContent Plugin - Production Ready
 
-See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for detailed design and roadmap.
+The **GeneContent plugin** provides phylogenetic analysis of pangenome gain/loss dynamics with a novel strain heterogeneity framework.
+
+### Quick Start
+
+```python
+from persiste.plugins.genecontent.pam_interface import fit
+from persiste.plugins.genecontent.strain_recipes import strain_heterogeneity_scan
+
+# Load your presence/absence matrix
+result = fit(
+    pam="pangenome.csv",
+    taxon_names=taxa,
+    gene_names=genes,
+    tree_method='jaccard_upgma'
+)
+
+# Check for strain heterogeneity (ALWAYS RECOMMENDED)
+scan = strain_heterogeneity_scan(pam, taxa, genes)
+scan.print_summary()
+```
+
+### Key Features
+
+- **Strain heterogeneity detection** - Identifies when parameter estimates are driven by outlier strains
+- **Two-recipe framework** - Diagnostic scan + stratified modeling for heterogeneous datasets
+- **Rust acceleration** - 5-6x speedup for large datasets
+- **Validated on real data** - E. coli case study with 1,324 strains
+
+### Documentation
+
+- **[STRAIN_HETEROGENEITY_FRAMEWORK.md](STRAIN_HETEROGENEITY_FRAMEWORK.md)** - Complete framework guide
+- **[src/persiste/plugins/genecontent/README.md](src/persiste/plugins/genecontent/README.md)** - Plugin documentation
+- **[src/persiste/plugins/genecontent/examples/](src/persiste/plugins/genecontent/examples/)** - Example scripts and workflows
+
+## Repository Structure
+
+```
+persiste/
+├── src/persiste/
+│   ├── core/                          # Core framework (exploratory)
+│   └── plugins/
+│       ├── genecontent/               # GeneContent plugin (production-ready)
+│       │   ├── pam_interface.py       # Main interface
+│       │   ├── strain_diagnostics.py  # Heterogeneity diagnostics
+│       │   ├── strain_recipes.py      # Two-recipe framework
+│       │   ├── examples/              # Example scripts & workflows
+│       │   ├── exploratory/           # Development/validation scripts
+│       │   └── README.md
+│       ├── assembly/                  # Assembly Theory plugin (exploratory)
+│       │   └── examples/              # Assembly examples
+│       └── phylo/                     # Phylogenetics plugin (proof-of-concept)
+├── docs/                              # Documentation archive
+│   ├── benchmarks/                    # Performance comparisons
+│   └── development/                   # Development history
+├── rust/                              # Rust acceleration
+└── STRAIN_HETEROGENEITY_FRAMEWORK.md  # Main framework documentation
+```
 
 ## Development Status
 
-🚧 **Pre-alpha / exploratory**
+### Production-Ready
+- **GeneContent plugin** - Pangenome gain/loss analysis with strain heterogeneity framework
 
-- **Phylo plugin (FEL)**
-  Intended as a lightweight, not-very-rigorous validation that the framework can support HyPhy-adjacent workflows under a different conceptual framing.
-- **Assembly plugin**
-  An exploratory implementation motivated by curiosity about assembly theory and as a stress-test of framework flexibility.
+### Exploratory / Pre-alpha
+- **Phylo plugin (FEL)** - Lightweight validation that framework can support HyPhy-adjacent workflows
+- **Assembly plugin** - Exploratory implementation for assembly theory
+- **Core framework** - General baseline vs. constraint pattern (evolving)
 
-If you want to use this for serious scientific inference, plan to independently validate results and assumptions.
+If you want to use exploratory plugins for serious scientific inference, plan to independently validate results and assumptions.
 
 ## License
 
