@@ -336,6 +336,7 @@ def fit(
 
     return result
 
+
 def fit_null_model(
     cn_matrix: np.ndarray | str | Path,
     family_names: list[str] | None = None,
@@ -349,9 +350,9 @@ def fit_null_model(
 ) -> CopyNumberResult:
     """
     Fit null model (no constraint).
-    
+
     Convenience function for fitting baseline-only model.
-    
+
     Args:
         cn_matrix: Copy number matrix (n_families, n_taxa)
         family_names: List of gene family names
@@ -362,10 +363,10 @@ def fit_null_model(
         baseline_type: 'hierarchical' (default) or 'global'
         baseline_params: Optional baseline parameters
         verbose: Print progress
-    
+
     Returns:
         CopyNumberResult for null model
-    
+
     Example:
         >>> # Tree will be inferred automatically
         >>> result = fit_null_model(

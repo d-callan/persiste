@@ -51,11 +51,17 @@ def simulate_binary_evolution(
     if rng is None:
         rng = np.random.default_rng()
     
-    # Compute equilibrium frequencies if not provided
+    # Determine root state distribution
     if root_frequencies is None:
-        pi_0 = loss_rate / (gain_rate + loss_rate)
-        pi_1 = gain_rate / (gain_rate + loss_rate)
-        root_frequencies = (pi_0, pi_1)
+        root_pi_0 = loss_rate / (gain_rate + loss_rate)
+        root_pi_1 = gain_rate / (gain_rate + loss_rate)
+    else:
+        root_pi_0, root_pi_1 = root_frequencies
+        total = root_pi_0 + root_pi_1
+        if total <= 0:
+            raise ValueError("root_frequencies must have positive mass")
+        root_pi_0 /= total
+        root_pi_1 /= total
     
     # Initialize output matrix
     n_tips = tree.n_tips
@@ -76,8 +82,7 @@ def simulate_binary_evolution(
         ])
         
         # Initialize root state
-        pi_0, pi_1 = compute_equilibrium_frequencies(gain_rate, loss_rate)
-        root_state = rng.choice([0, 1], p=[pi_0, pi_1])
+        root_state = rng.choice([0, 1], p=[root_pi_0, root_pi_1])
         node_states = {int(tree.root_index): root_state}
         
         # Build children dictionary for proper traversal
