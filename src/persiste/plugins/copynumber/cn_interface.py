@@ -4,11 +4,11 @@ Main interface for copy number dynamics analysis.
 This module provides the high-level API for fitting copy number models.
 """
 
-from typing import Optional, Union, List, Dict, Any
-import numpy as np
 from pathlib import Path
 
-from persiste.core.trees import Tree
+import numpy as np
+
+from persiste.core.trees import TreeStructure, load_tree
 from persiste.plugins.copynumber.states.cn_states import (
     CopyNumberState,
     get_sparse_transition_graph,
@@ -35,7 +35,7 @@ from persiste.plugins.copynumber.data.cn_data import (
 
 def compute_family_likelihood(
     family_data: np.ndarray,
-    tree: Tree,
+    tree: TreeStructure,
     rate_matrix: np.ndarray,
     obs_model: DeterministicBinObservation,
 ) -> float:
@@ -58,69 +58,50 @@ def compute_family_likelihood(
     # Get tip likelihoods from observation model
     tip_likelihoods = obs_model.get_tip_likelihoods_matrix(family_data)
     
-    # Run Felsenstein pruning using the simple Tree interface
-    # This is the production code path
     n_states = rate_matrix.shape[0]
-    n_nodes = len(tree.nodes)
+    n_nodes = tree.n_nodes
     
-    # Initialize conditionals
-    conditionals = {}
+    # Initialize conditional likelihoods for every node
+    conditionals = [np.ones(n_states) for _ in range(n_nodes)]
     
-    # Set tip conditionals
-    # Map leaf nodes to tip data indices
-    leaves = tree.get_leaves()
-    for taxon_idx, leaf_id in enumerate(leaves):
-        conditionals[leaf_id] = tip_likelihoods[taxon_idx, :]
+    # Set tip conditionals using observation model output
+    for tip_idx_pos, tip_idx in enumerate(tree.tip_indices):
+        conditionals[tip_idx] = tip_likelihoods[tip_idx_pos, :]
     
-    # Postorder traversal
-    def postorder(node_id):
-        if tree.is_leaf(node_id):
-            return
+    # Traverse nodes in postorder (tips first, root last)
+    for node_id in tree.postorder:
+        node = tree.nodes[node_id]
+        if node.is_tip:
+            continue
         
-        children = tree.get_children(node_id)
+        # Combine likelihood contributions from each child
+        combined = np.ones(n_states)
+        for child_id in node.children_ids:
+            branch_length = tree.branch_lengths[child_id]
+            transition = expm(rate_matrix * branch_length)
+            combined *= transition.T @ conditionals[child_id]
         
-        # Process children first
-        for child_id in children:
-            postorder(child_id)
-        
-        # Combine children
-        if len(children) >= 2:
-            child1_id = children[0]
-            child2_id = children[1]
-            
-            # Get transition matrices P(t) = exp(Qt)
-            t1 = tree.get_branch_length(child1_id)
-            t2 = tree.get_branch_length(child2_id)
-            
-            P1 = expm(rate_matrix * t1)
-            P2 = expm(rate_matrix * t2)
-            
-            # Combine: L_parent[state] = (Σ P1[state,j] * L_child1[j]) * (Σ P2[state,k] * L_child2[k])
-            term1 = P1.T @ conditionals[child1_id]
-            term2 = P2.T @ conditionals[child2_id]
-            
-            conditionals[node_id] = term1 * term2
+        conditionals[node_id] = combined
     
-    postorder(tree.root)
-    
-    # Compute likelihood at root with uniform prior
+    root_idx = tree.root_index
     root_prior = np.ones(n_states) / n_states
-    likelihood = np.sum(root_prior * conditionals[tree.root])
+    likelihood = np.sum(root_prior * conditionals[root_idx])
     
     return np.log(likelihood + 1e-300)
 
 
 def fit(
-    cn_matrix: Union[np.ndarray, str, Path],
-    family_names: Optional[List[str]] = None,
-    taxon_names: Optional[List[str]] = None,
-    tree: Optional[Union[Tree, str, Path]] = None,
-    ploidy: int = 2,
+    cn_matrix: np.ndarray | str | Path,
+    family_names: list[str] | None = None,
+    taxon_names: list[str] | None = None,
+    tree: TreeStructure | str | Path | None = None,
+    tree_method: str = "jaccard_upgma",
+    ploidy: int = 1,
     baseline_type: str = 'hierarchical',
-    baseline_params: Optional[Dict[str, float]] = None,
-    constraint_type: Optional[str] = None,
-    constraint_params: Optional[Dict[str, Any]] = None,
-    theta: Optional[float] = None,
+    baseline_params: dict[str, float] | None = None,
+    constraint_type: str | None = None,
+    constraint_params: dict[str, object] | None = None,
+    theta: float | None = None,
     obs_model_type: str = 'deterministic',
     verbose: bool = False,
 ) -> CopyNumberResult:
@@ -135,6 +116,11 @@ def fit(
         family_names: List of gene family names
         taxon_names: List of taxon names
         tree: Phylogenetic tree or path to tree file
+            - If None, will infer from CN matrix (converts to PAM, builds tree)
+        tree_method: Tree inference method if tree=None:
+            - "jaccard_upgma": Jaccard distance + UPGMA (default, recommended)
+            - "hamming_upgma": Hamming distance + UPGMA
+            - "jaccard_nj": Jaccard distance + Neighbor-Joining
         ploidy: Organism ploidy (for binning raw counts)
         baseline_type: 'hierarchical' (default) or 'global'
         baseline_params: Optional baseline parameters
@@ -151,12 +137,19 @@ def fit(
         CopyNumberResult with fitted model
     
     Example:
-        >>> # Basic usage (null model)
+        >>> # Basic usage (null model, tree inferred)
         >>> result = fit(
         ...     cn_matrix=cn_data,
         ...     family_names=families,
         ...     taxon_names=taxa,
-        ...     tree=tree
+        ... )
+        
+        >>> # With provided tree
+        >>> result = fit(
+        ...     cn_matrix=cn_data,
+        ...     family_names=families,
+        ...     taxon_names=taxa,
+        ...     tree="data/tree.nwk"
         ... )
         
         >>> # With dosage stability constraint
@@ -164,7 +157,6 @@ def fit(
         ...     cn_matrix=cn_data,
         ...     family_names=families,
         ...     taxon_names=taxa,
-        ...     tree=tree,
         ...     constraint_type='dosage_stability',
         ...     theta=-0.5  # buffered
         ... )
@@ -201,13 +193,35 @@ def fit(
     if verbose:
         data.print_summary()
     
-    # Load/validate tree
+    # Load or infer tree
     if tree is None:
-        raise ValueError("tree is required")
-    
-    if isinstance(tree, (str, Path)):
-        # TODO: Implement tree loading
-        raise NotImplementedError("Tree loading not yet implemented")
+        if verbose:
+            print(f"\nInferring tree from CN matrix using {tree_method}...")
+        
+        from persiste.core.tree_building import infer_tree_from_binary_matrix
+        
+        # Convert CN to presence/absence (transpose to taxa × families)
+        pam = (cn_matrix.T > 0).astype(int)
+        
+        tree_obj, _ = infer_tree_from_binary_matrix(
+            binary_matrix=pam,
+            taxon_names=taxon_names,
+            method=tree_method,
+        )
+        
+        if verbose:
+            print(f"  Tree built: {tree_obj.n_tips} tips, {tree_obj.n_nodes} total nodes")
+    elif isinstance(tree, (str, Path)):
+        tree_obj = load_tree(tree)
+        if verbose:
+            print(f"\nLoaded tree from {tree}: {tree_obj.n_tips} tips")
+    elif isinstance(tree, TreeStructure):
+        tree_obj = tree
+    else:
+        raise TypeError(
+            "tree must be a TreeStructure, path to Newick file, or None "
+            f"(got {type(tree)})"
+        )
     
     # Create baseline model
     if baseline_params is None:
@@ -265,7 +279,7 @@ def fit(
         family_data = data.get_family_data(fam_idx)
         
         # Compute likelihood
-        ll = compute_family_likelihood(family_data, tree, Q, obs_model)
+        ll = compute_family_likelihood(family_data, tree_obj, Q, obs_model)
         per_family_lls[fam_idx] = ll
         
         if verbose and (fam_idx + 1) % 100 == 0:
@@ -312,25 +326,25 @@ def fit(
         theta=theta,
         baseline_params=baseline_params_dict,
         n_params=n_params,
-        tree=tree,
+        tree=tree_obj,
         per_family_likelihoods=per_family_lls,
     )
-    
+
     if verbose:
         print("\n" + "=" * 70)
         result.print_summary()
-    
+
     return result
 
-
 def fit_null_model(
-    cn_matrix: Union[np.ndarray, str, Path],
-    family_names: Optional[List[str]] = None,
-    taxon_names: Optional[List[str]] = None,
-    tree: Optional[Union[Tree, str, Path]] = None,
+    cn_matrix: np.ndarray | str | Path,
+    family_names: list[str] | None = None,
+    taxon_names: list[str] | None = None,
+    tree: TreeStructure | str | Path | None = None,
+    tree_method: str = "jaccard_upgma",
     ploidy: int = 2,
     baseline_type: str = 'hierarchical',
-    baseline_params: Optional[Dict[str, float]] = None,
+    baseline_params: dict[str, float] | None = None,
     verbose: bool = False,
 ) -> CopyNumberResult:
     """
@@ -339,16 +353,33 @@ def fit_null_model(
     Convenience function for fitting baseline-only model.
     
     Args:
-        Same as fit(), but no constraint parameters
+        cn_matrix: Copy number matrix (n_families, n_taxa)
+        family_names: List of gene family names
+        taxon_names: List of taxon names
+        tree: Phylogenetic tree (optional - will infer if None)
+        tree_method: Tree inference method if tree=None
+        ploidy: Organism ploidy
+        baseline_type: 'hierarchical' (default) or 'global'
+        baseline_params: Optional baseline parameters
+        verbose: Print progress
     
     Returns:
         CopyNumberResult for null model
+    
+    Example:
+        >>> # Tree will be inferred automatically
+        >>> result = fit_null_model(
+        ...     cn_matrix=cn_data,
+        ...     family_names=families,
+        ...     taxon_names=taxa,
+        ... )
     """
     return fit(
         cn_matrix=cn_matrix,
         family_names=family_names,
         taxon_names=taxon_names,
         tree=tree,
+        tree_method=tree_method,
         ploidy=ploidy,
         baseline_type=baseline_type,
         baseline_params=baseline_params,
@@ -356,12 +387,11 @@ def fit_null_model(
         verbose=verbose,
     )
 
-
 def likelihood_ratio_test(
     alternative: CopyNumberResult,
     null: CopyNumberResult,
     verbose: bool = False,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """
     Perform likelihood ratio test.
     

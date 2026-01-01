@@ -9,47 +9,47 @@ The actual implementation lives in: persiste/recipes/gene_dosage_effect.py
 This stub provides a pointer and explains the design philosophy.
 """
 
-from typing import Union, List, Optional
 from pathlib import Path
+from typing import List, Optional, Union
 
-from persiste.core.trees import Tree
+from persiste.core.trees import TreeStructure, load_tree
 
 
 def gene_dosage_effect(
     cn_matrix: Union[str, Path],
     family_names: List[str],
     taxon_names: List[str],
-    tree: Union[Tree, str, Path],
+    tree: Union[TreeStructure, str, Path],
     output_dir: Optional[str] = None,
     verbose: bool = True,
 ):
     """
     Cross-Plugin Recipe: Gene Dosage Effect
-    
+
     This is an ORCHESTRATION recipe - it runs two plugins sequentially and
     integrates their results. No joint likelihood required.
-    
+
     Design Philosophy:
     - Presence/absence events are rare but decisive
     - CN changes are frequent but subtle
     - Forcing them into one CTMC dilutes both signals
     - Separate analysis + biological integration is more powerful
-    
+
     Workflow:
     1. Gene retention analysis (GeneContent)
        - Classify: core-like, accessory-like, lineage-restricted
        - Outputs: retention regime, π₁, λ, μ
-    
+
     2. Conditional copy-number analysis (CopyNumberDynamics)
        - Analyze CN dynamics only where gene is present
        - Test: dosage stability, amplification bias
-    
+
     3. Integrative interpretation (the "dosage effect")
        - High retention + strong buffering → Essential dosage-sensitive
        - High retention + amplification bias → Adaptive dosage modulation
        - Low retention + high amplification → Mobile elements / selfish genes
        - Host-specific retention + CN volatility → Environment-dependent dosage
-    
+
     Args:
         cn_matrix: Copy number matrix (n_families, n_taxa)
         family_names: List of gene family names
@@ -57,38 +57,40 @@ def gene_dosage_effect(
         tree: Phylogenetic tree
         output_dir: Optional directory for output files
         verbose: Print progress and interpretation
-    
+
     Returns:
         GeneDosageEffectReport with integrated analysis
-    
+
     Example:
         >>> from persiste.recipes import gene_dosage_effect
-        >>> 
+        >>>
         >>> report = gene_dosage_effect(
         ...     cn_matrix="data/cn_matrix.tsv",
         ...     family_names=families,
         ...     taxon_names=taxa,
         ...     tree="data/tree.nwk",
         ... )
-        >>> 
+        >>>
         >>> # Identify essential dosage-sensitive genes
         >>> essential = [
         ...     fam for fam, pattern in report.integrated_patterns.items()
         ...     if pattern == "essential_dosage_sensitive"
         ... ]
-    
+
     Note:
         The actual implementation lives in: persiste/recipes/gene_dosage_effect.py
         This stub provides a convenient import path from the CopyNumber plugin.
     """
     # Import from cross-plugin recipes
     from persiste.recipes.gene_dosage_effect import gene_dosage_effect as _gene_dosage_effect
-    
+
+    tree_obj = load_tree(tree) if isinstance(tree, (str, Path)) else tree
+
     return _gene_dosage_effect(
         cn_matrix=cn_matrix,
         family_names=family_names,
         taxon_names=taxon_names,
-        tree=tree,
+        tree=tree_obj,
         output_dir=output_dir,
         verbose=verbose,
     )

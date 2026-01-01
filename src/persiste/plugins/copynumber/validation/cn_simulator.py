@@ -6,22 +6,20 @@ Used for validation and power analysis.
 """
 
 from dataclasses import dataclass
-from typing import Optional, Dict, Tuple, Callable
 from enum import Enum
-import numpy as np
-from scipy.linalg import expm
 
-from persiste.core.trees import Tree
-from persiste.plugins.copynumber.states.cn_states import CopyNumberState
+import numpy as np
+
+from persiste.core.trees import TreeStructure
 from persiste.plugins.copynumber.baselines.cn_baseline import (
     GlobalBaseline,
     HierarchicalBaseline,
 )
 from persiste.plugins.copynumber.constraints.cn_constraints import (
-    apply_constraint,
-    DosageStabilityConstraint,
     AmplificationBiasConstraint,
+    DosageStabilityConstraint,
     HostConditionedVolatilityConstraint,
+    apply_constraint,
 )
 
 
@@ -82,17 +80,17 @@ class SimulationConfig:
     """
     scenario: SimulationScenario
     baseline_type: str = 'global'
-    baseline_params: Optional[Dict] = None
-    constraint_type: Optional[str] = None
-    theta: Optional[float] = None
-    root_state: Optional[int] = None
+    baseline_params: dict | None = None
+    constraint_type: str | None = None
+    theta: float | None = None
+    root_state: int | None = None
     n_families: int = 100
     seed: int = 42
     use_regimes: bool = False
-    regime_params: Optional[list] = None
+    regime_params: list | None = None
 
 
-def get_stationary_distribution(Q: np.ndarray) -> np.ndarray:
+def get_stationary_distribution(rate_matrix: np.ndarray) -> np.ndarray:
     """
     Compute stationary distribution of rate matrix.
     
@@ -105,26 +103,26 @@ def get_stationary_distribution(Q: np.ndarray) -> np.ndarray:
         (4,) stationary distribution
     """
     # Eigenvalue decomposition
-    eigenvalues, eigenvectors = np.linalg.eig(Q.T)
-    
+    eigenvalues, eigenvectors = np.linalg.eig(rate_matrix.T)
+
     # Find eigenvector corresponding to eigenvalue ≈ 0
     idx = np.argmin(np.abs(eigenvalues))
     stationary = np.real(eigenvectors[:, idx])
-    
+
     # Normalize
     stationary = stationary / stationary.sum()
-    
+
     # Ensure non-negative (numerical issues)
     stationary = np.maximum(stationary, 0)
     stationary = stationary / stationary.sum()
-    
+
     return stationary
 
 
 def simulate_along_branch(
     start_state: int,
     branch_length: float,
-    Q: np.ndarray,
+    rate_matrix: np.ndarray,
     rng: np.random.Generator,
 ) -> int:
     """
@@ -143,46 +141,46 @@ def simulate_along_branch(
     """
     current_state = start_state
     current_time = 0.0
-    
+
     while current_time < branch_length:
         # Get rate of leaving current state
-        rate_out = -Q[current_state, current_state]
-        
+        rate_out = -rate_matrix[current_state, current_state]
+
         if rate_out <= 0:
             # Absorbing state (shouldn't happen with valid Q)
             break
-        
+
         # Sample waiting time
         waiting_time = rng.exponential(1.0 / rate_out)
-        
+
         if current_time + waiting_time >= branch_length:
             # No more events on this branch
             break
-        
+
         current_time += waiting_time
-        
+
         # Sample destination state
-        transition_rates = Q[current_state, :].copy()
+        transition_rates = rate_matrix[current_state, :].copy()
         transition_rates[current_state] = 0  # Can't stay
         transition_probs = transition_rates / transition_rates.sum()
-        
+
         current_state = rng.choice(4, p=transition_probs)
-    
+
     return current_state
 
 
 def simulate_on_tree(
-    tree: Tree,
-    Q: np.ndarray,
-    root_state: Optional[int] = None,
-    rng: Optional[np.random.Generator] = None,
-) -> Dict[str, int]:
+    tree: TreeStructure,
+    rate_matrix: np.ndarray,
+    root_state: int | None = None,
+    rng: np.random.Generator | None = None,
+) -> dict[str, int]:
     """
     Simulate CN evolution on a phylogenetic tree.
     
     Args:
         tree: Phylogenetic tree
-        Q: (4, 4) rate matrix
+        rate_matrix: (4, 4) rate matrix
         root_state: Initial state at root (or None for stationary)
         rng: Random number generator
     
@@ -191,42 +189,39 @@ def simulate_on_tree(
     """
     if rng is None:
         rng = np.random.default_rng()
-    
+
     # Initialize root state
     if root_state is None:
         # Sample from stationary distribution
-        pi = get_stationary_distribution(Q)
+        pi = get_stationary_distribution(rate_matrix)
         root_state = rng.choice(4, p=pi)
-    
+
     # Store states at all nodes
-    node_states = {tree.root: root_state}
-    
+    node_states = np.zeros(tree.n_nodes, dtype=int)
+    node_states[tree.root_index] = root_state
+
     # Traverse tree (preorder)
     def traverse(node_id: int):
         parent_state = node_states[node_id]
-        
-        for child_id in tree.get_children(node_id):
-            branch_length = tree.get_branch_length(child_id)
-            
-            # Simulate along branch
-            child_state = simulate_along_branch(
-                parent_state, branch_length, Q, rng
-            )
-            
+        node = tree.nodes[node_id]
+
+        for child_id in node.children_ids:
+            branch_length = tree.branch_lengths[child_id]
+
+            child_state = simulate_along_branch(parent_state, branch_length, rate_matrix, rng)
             node_states[child_id] = child_state
-            
-            # Recurse
-            if not tree.is_leaf(child_id):
+
+            if not tree.nodes[child_id].is_tip:
                 traverse(child_id)
-    
-    traverse(tree.root)
-    
+
+    traverse(tree.root_index)
+
     # Extract tip states
     tip_states = {}
-    for node_id in tree.get_leaves():
-        taxon_name = tree.get_node_name(node_id)
-        tip_states[taxon_name] = node_states[node_id]
-    
+    for tip_idx in tree.tip_indices:
+        taxon_name = tree.nodes[tip_idx].name or f"tip_{tip_idx}"
+        tip_states[taxon_name] = node_states[tip_idx]
+
     return tip_states
 
 
@@ -269,9 +264,9 @@ def get_default_regimes() -> list:
 
 
 def simulate_cn_evolution(
-    tree: Tree,
+    tree: TreeStructure,
     config: SimulationConfig,
-) -> Tuple[np.ndarray, Dict]:
+) -> tuple[np.ndarray, dict]:
     """
     Simulate copy number evolution for multiple families.
     
@@ -287,30 +282,30 @@ def simulate_cn_evolution(
             metadata: Dictionary with simulation details
     """
     rng = np.random.default_rng(config.seed)
-    
+
     # Get taxon names from tree
-    taxon_names = [tree.get_node_name(leaf) for leaf in tree.get_leaves()]
+    taxon_names = [tree.nodes[idx].name or f"tip_{idx}" for idx in tree.tip_indices]
     n_taxa = len(taxon_names)
-    
+
     # Initialize output
     cn_matrix = np.zeros((config.n_families, n_taxa), dtype=int)
-    
+
     # Regime-based simulation (realistic heterogeneity)
     if config.use_regimes:
         regimes = config.regime_params if config.regime_params else get_default_regimes()
-        
+
         # Assign families to regimes
         regime_proportions = [r.proportion for r in regimes]
         regime_assignments = rng.choice(
-            len(regimes), 
-            size=config.n_families, 
-            p=regime_proportions
+            len(regimes),
+            size=config.n_families,
+            p=regime_proportions,
         )
-        
+
         # Simulate each family with regime-specific rates
         for fam_idx in range(config.n_families):
             regime = regimes[regime_assignments[fam_idx]]
-            
+
             # Build rate matrix for this regime
             baseline = GlobalBaseline(
                 gain_rate=regime.gain_rate,
@@ -318,8 +313,8 @@ def simulate_cn_evolution(
                 amplify_rate=regime.amplify_rate,
                 contract_rate=regime.contract_rate,
             )
-            Q_base = baseline.build_rate_matrix()
-            
+            baseline_matrix = baseline.build_rate_matrix()
+
             # Apply constraint if specified
             if config.constraint_type is not None and config.theta is not None:
                 if config.constraint_type == 'dosage_stability':
@@ -330,19 +325,24 @@ def simulate_cn_evolution(
                     constraint = HostConditionedVolatilityConstraint()
                 else:
                     raise ValueError(f"Unknown constraint type: {config.constraint_type}")
-                
-                Q = apply_constraint(Q_base, constraint, config.theta, family_idx=fam_idx)
+
+                rate_matrix = apply_constraint(
+                    baseline_matrix,
+                    constraint,
+                    config.theta,
+                    family_idx=fam_idx,
+                )
             else:
-                Q = Q_base
-            
+                rate_matrix = baseline_matrix
+
             # Simulate on tree
-            tip_states = simulate_on_tree(tree, Q, config.root_state, rng)
-            
+            tip_states = simulate_on_tree(tree, rate_matrix, config.root_state, rng)
+
             # Store in matrix
             for taxon_idx, taxon_name in enumerate(taxon_names):
                 cn_matrix[fam_idx, taxon_idx] = tip_states[taxon_name]
-        
-        metadata = {
+
+        metadata: dict = {
             'scenario': config.scenario.value,
             'use_regimes': True,
             'regimes': [r.name for r in regimes],
@@ -354,29 +354,29 @@ def simulate_cn_evolution(
             'seed': config.seed,
             'taxon_names': taxon_names,
         }
-        
+
         return cn_matrix, metadata
-    
+
     # Original single-baseline simulation (for comparison)
     # Create baseline model
     if config.baseline_params is None:
         baseline_params = {}
     else:
         baseline_params = config.baseline_params.copy()
-    
+
     if config.baseline_type == 'global':
         baseline = GlobalBaseline(**baseline_params)
     else:  # hierarchical
         baseline = HierarchicalBaseline(**baseline_params)
         baseline.sample_family_rates(config.n_families, rng)
-    
+
     # Simulate each family
     for fam_idx in range(config.n_families):
         # Get baseline rate matrix for this family
-        Q_base = baseline.build_rate_matrix(
+        baseline_matrix = baseline.build_rate_matrix(
             family_idx=fam_idx if config.baseline_type == 'hierarchical' else None
         )
-        
+
         # Apply constraint if specified
         if config.constraint_type is not None and config.theta is not None:
             if config.constraint_type == 'dosage_stability':
@@ -387,18 +387,23 @@ def simulate_cn_evolution(
                 constraint = HostConditionedVolatilityConstraint()
             else:
                 raise ValueError(f"Unknown constraint type: {config.constraint_type}")
-            
-            Q = apply_constraint(Q_base, constraint, config.theta, family_idx=fam_idx)
+
+            rate_matrix = apply_constraint(
+                baseline_matrix,
+                constraint,
+                config.theta,
+                family_idx=fam_idx,
+            )
         else:
-            Q = Q_base
-        
+            rate_matrix = baseline_matrix
+
         # Simulate on tree
-        tip_states = simulate_on_tree(tree, Q, config.root_state, rng)
-        
+        tip_states = simulate_on_tree(tree, rate_matrix, config.root_state, rng)
+
         # Store in matrix
         for taxon_idx, taxon_name in enumerate(taxon_names):
             cn_matrix[fam_idx, taxon_idx] = tip_states[taxon_name]
-    
+
     # Metadata
     metadata = {
         'scenario': config.scenario.value,
@@ -410,7 +415,7 @@ def simulate_cn_evolution(
         'seed': config.seed,
         'taxon_names': taxon_names,
     }
-    
+
     return cn_matrix, metadata
 
 
@@ -447,7 +452,7 @@ def create_scenario_config(
             seed=seed,
             use_regimes=use_regimes,
         )
-    
+
     elif scenario == SimulationScenario.DOSAGE_BUFFERING:
         # Dosage buffering: regime heterogeneity + moderate constraint
         # Effect: suppresses all CN changes across all regimes
@@ -459,7 +464,7 @@ def create_scenario_config(
             seed=seed,
             use_regimes=use_regimes,
         )
-    
+
     elif scenario == SimulationScenario.AMPLIFICATION_BIAS:
         # Amplification bias: regime heterogeneity + moderate constraint
         # Effect: boosts 1→2, 2→3; suppresses 2→1, 3→2 (bidirectional)
@@ -472,7 +477,7 @@ def create_scenario_config(
             seed=seed,
             use_regimes=use_regimes,
         )
-    
+
     elif scenario == SimulationScenario.HIGH_VOLATILITY_LINEAGE:
         # High volatility: regime heterogeneity + lineage-specific constraint
         return SimulationConfig(
@@ -483,17 +488,17 @@ def create_scenario_config(
             seed=seed,
             use_regimes=use_regimes,
         )
-    
+
     else:
         raise ValueError(f"Unknown scenario: {scenario}")
 
 
 def simulate_scenario(
     scenario: SimulationScenario,
-    tree: Tree,
+    tree: TreeStructure,
     n_families: int = 100,
     seed: int = 42,
-) -> Tuple[np.ndarray, Dict]:
+) -> tuple[np.ndarray, dict]:
     """
     Convenience function to simulate a predefined scenario.
     

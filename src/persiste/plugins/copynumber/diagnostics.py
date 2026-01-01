@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 
-from persiste.core.trees import Tree
+from persiste.core.trees import TreeStructure, load_tree
 from persiste.plugins.copynumber.cn_interface import fit_null_model
 
 
@@ -21,7 +21,7 @@ def expected_vs_observed_cn(
     cn_matrix: Union[np.ndarray, str, Path],
     family_names: Optional[List[str]] = None,
     taxon_names: Optional[List[str]] = None,
-    tree: Optional[Union[Tree, str, Path]] = None,
+    tree: Optional[Union[TreeStructure, str, Path]] = None,
     baseline_type: str = 'hierarchical',
     figsize: Tuple[int, int] = (10, 6),
     save_path: Optional[str] = None,
@@ -62,11 +62,17 @@ def expected_vs_observed_cn(
         cn_data = np.loadtxt(cn_matrix, delimiter='\t', skiprows=1)
     
     # Fit null model
+    tree_obj = None
+    if isinstance(tree, (str, Path)):
+        tree_obj = load_tree(tree)
+    elif isinstance(tree, TreeStructure):
+        tree_obj = tree
+
     result = fit_null_model(
         cn_matrix=cn_matrix,
         family_names=family_names,
         taxon_names=taxon_names,
-        tree=tree,
+        tree=tree_obj,
         baseline_type=baseline_type,
     )
     
@@ -74,8 +80,7 @@ def expected_vs_observed_cn(
     observed_mean = np.mean(cn_data, axis=1)
     
     # Compute expected CN from stationary distribution
-    baseline = result.baseline
-    Q = baseline.build_rate_matrix()
+    Q = result.build_baseline_rate_matrix()
     
     # Stationary distribution
     eigenvalues, eigenvectors = np.linalg.eig(Q.T)
@@ -145,7 +150,7 @@ def interpret_diagnostic(
     cn_matrix: Union[np.ndarray, str, Path],
     family_names: Optional[List[str]] = None,
     taxon_names: Optional[List[str]] = None,
-    tree: Optional[Union[Tree, str, Path]] = None,
+    tree: Optional[Union[TreeStructure, str, Path]] = None,
     baseline_type: str = 'hierarchical',
 ) -> str:
     """

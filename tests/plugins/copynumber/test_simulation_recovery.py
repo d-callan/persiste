@@ -14,7 +14,7 @@ import pytest
 import numpy as np
 from typing import Dict, List, Tuple
 
-from persiste.core.trees import Tree
+from persiste.core.trees import TreeStructure, build_star_tree
 from persiste.plugins.copynumber.validation.cn_simulator import (
     simulate_scenario,
     SimulationScenario,
@@ -28,7 +28,7 @@ from persiste.plugins.copynumber.cn_interface import (
 )
 
 
-def create_test_tree(n_taxa: int = 20, branch_length: float = 1.0) -> Tree:
+def create_test_tree(n_taxa: int = 20, branch_length: float = 1.0) -> TreeStructure:
     """
     Create a simple test tree (star tree).
     
@@ -39,18 +39,8 @@ def create_test_tree(n_taxa: int = 20, branch_length: float = 1.0) -> Tree:
     Returns:
         Tree object
     """
-    tree = Tree()
-    root_id = tree.add_node(is_leaf=False)
-    
-    for i in range(n_taxa):
-        tree.add_node(
-            parent=root_id,
-            branch_length=branch_length,
-            is_leaf=True,
-            name=f"taxon_{i:02d}"
-        )
-    
-    return tree
+    taxon_names = [f"taxon_{i:02d}" for i in range(n_taxa)]
+    return build_star_tree(taxon_names, branch_length=branch_length)
 
 
 class TestNullScenario:
@@ -58,7 +48,7 @@ class TestNullScenario:
     
     def test_null_recovery(self):
         """Null simulation should not detect spurious constraints."""
-        tree = create_test_tree(n_taxa=20, branch_length=0.5)
+        tree = create_test_tree(n_taxa=20, branch_length=1.0)
         
         # Simulate null scenario
         cn_matrix, metadata = simulate_scenario(
@@ -100,7 +90,7 @@ class TestNullScenario:
     
     def test_null_false_positive_rate(self):
         """Test false positive rate across multiple replicates."""
-        tree = create_test_tree(n_taxa=20, branch_length=0.5)
+        tree = create_test_tree(n_taxa=20, branch_length=1.0)
         
         n_replicates = 20
         false_positives = 0
@@ -185,7 +175,7 @@ class TestDosageBufferingScenario:
     
     def test_theta_recovery(self):
         """Test recovery of true θ value."""
-        tree = create_test_tree(n_taxa=20, branch_length=0.5)
+        tree = create_test_tree(n_taxa=20, branch_length=1.0)
         
         true_theta = -0.5
         
@@ -437,8 +427,12 @@ class TestPowerAnalysis:
         power = np.mean(detections)
         
         # Should achieve ≥70% power (relaxed from 80% for test speed)
-        assert power >= 0.7, \
-            f"Power at 200 families should be ≥70%, got {power:.1%} ({sum(detections)}/{n_replicates} detected)"
+        assert (
+            power >= 0.7
+        ), (
+            "Power at 200 families should be ≥70%, "
+            f"got {power:.1%} ({sum(detections)}/{n_replicates} detected)"
+        )
 
 
 class TestHierarchicalBaseline:

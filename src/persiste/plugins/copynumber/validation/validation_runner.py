@@ -13,11 +13,10 @@ from dataclasses import dataclass
 # Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
-from persiste.core.trees import Tree
+from persiste.core.trees import TreeStructure, build_star_tree
 from persiste.plugins.copynumber.validation.cn_simulator import (
     simulate_scenario,
     SimulationScenario,
-    create_test_tree,
 )
 from persiste.plugins.copynumber.cn_interface import (
     fit,
@@ -182,22 +181,12 @@ class ValidationRunner:
         
         return results
     
-    def _create_test_tree(self) -> Tree:
+    def _create_test_tree(self) -> TreeStructure:
         """Create test tree for validation."""
-        tree = Tree()
-        root_id = tree.add_node(is_leaf=False)
-        
-        for i in range(20):
-            tree.add_node(
-                parent=root_id,
-                branch_length=0.5,
-                is_leaf=True,
-                name=f"taxon_{i:02d}"
-            )
-        
-        return tree
+        taxon_names = [f"taxon_{i:02d}" for i in range(20)]
+        return build_star_tree(taxon_names, branch_length=0.5)
     
-    def _test_false_positive_rate(self, tree: Tree) -> ValidationResult:
+    def _test_false_positive_rate(self, tree: TreeStructure) -> ValidationResult:
         """Test false positive rate under null."""
         n_replicates = 10
         false_positives = 0
@@ -243,7 +232,7 @@ class ValidationRunner:
             threshold=0.15
         )
     
-    def _test_dosage_buffering_detection(self, tree: Tree) -> ValidationResult:
+    def _test_dosage_buffering_detection(self, tree: TreeStructure) -> ValidationResult:
         """Test detection of dosage buffering."""
         cn_matrix, metadata = simulate_scenario(
             SimulationScenario.DOSAGE_BUFFERING,
@@ -281,7 +270,7 @@ class ValidationRunner:
             threshold=0.05
         )
     
-    def _test_amplification_bias_detection(self, tree: Tree) -> ValidationResult:
+    def _test_amplification_bias_detection(self, tree: TreeStructure) -> ValidationResult:
         """Test detection of amplification bias."""
         cn_matrix, metadata = simulate_scenario(
             SimulationScenario.AMPLIFICATION_BIAS,
@@ -319,7 +308,7 @@ class ValidationRunner:
             threshold=0.05
         )
     
-    def _test_theta_recovery(self, tree: Tree) -> ValidationResult:
+    def _test_theta_recovery(self, tree: TreeStructure) -> ValidationResult:
         """Test recovery of true θ value."""
         from persiste.plugins.copynumber.validation.cn_simulator import (
             create_scenario_config,
@@ -372,7 +361,7 @@ class ValidationRunner:
             threshold=0.3
         )
     
-    def _test_wrong_constraint_rejection(self, tree: Tree) -> ValidationResult:
+    def _test_wrong_constraint_rejection(self, tree: TreeStructure) -> ValidationResult:
         """Test that wrong constraint is not preferred."""
         cn_matrix, metadata = simulate_scenario(
             SimulationScenario.DOSAGE_BUFFERING,
@@ -411,7 +400,7 @@ class ValidationRunner:
             threshold=-2.0
         )
     
-    def _test_statistical_power(self, tree: Tree) -> ValidationResult:
+    def _test_statistical_power(self, tree: TreeStructure) -> ValidationResult:
         """Test statistical power at reasonable branch lengths."""
         cn_matrix, metadata = simulate_scenario(
             SimulationScenario.DOSAGE_BUFFERING,

@@ -17,7 +17,7 @@ import numpy as np
 # Add src to path for development
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
-from persiste.core.trees import Tree
+from persiste.core.trees import TreeStructure, build_star_tree
 from persiste.plugins.copynumber import fit
 from persiste.plugins.copynumber.cn_interface import (
     fit_null_model,
@@ -56,28 +56,14 @@ def create_synthetic_data(
     return cn_matrix, family_names, taxon_names, tree
 
 
-def create_star_tree(n_taxa: int) -> Tree:
+def create_star_tree(n_taxa: int) -> TreeStructure:
     """
     Create a simple star tree for testing.
     
     In real usage, you'd load a real phylogenetic tree.
     """
-    # This is a placeholder - in real usage you'd use proper tree construction
-    # For now, just create a simple Tree object
-    from persiste.core.trees import Tree
-    
-    # Create a star tree structure
-    # Root with n_taxa children, all with branch length 1.0
-    tree = Tree()
-    
-    # Add root
-    root_id = tree.add_node(is_leaf=False)
-    
-    # Add taxa as children of root
-    for i in range(n_taxa):
-        tree.add_node(parent=root_id, branch_length=1.0, is_leaf=True, name=f"taxon_{i:02d}")
-    
-    return tree
+    taxon_names = [f"taxon_{i:02d}" for i in range(n_taxa)]
+    return build_star_tree(taxon_names, branch_length=1.0)
 
 
 def main():

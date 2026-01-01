@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 from dataclasses import dataclass
 
-from persiste.core.trees import Tree
+from persiste.core.trees import TreeStructure
 from persiste.plugins.copynumber.cn_interface import (
     fit,
     fit_null_model,
@@ -50,7 +50,7 @@ def lineage_volatility_test(
     cn_matrix: Union[np.ndarray, str, Path],
     family_names: Optional[List[str]] = None,
     taxon_names: Optional[List[str]] = None,
-    tree: Optional[Union[Tree, str, Path]] = None,
+    tree: Optional[Union[TreeStructure, str, Path]] = None,
     target_lineage: str = "host_associated",
     baseline_type: str = 'hierarchical',
     theta_grid: Optional[np.ndarray] = None,
