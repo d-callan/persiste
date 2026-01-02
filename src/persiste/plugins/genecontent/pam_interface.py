@@ -12,11 +12,12 @@ from typing import Literal, Optional, Union
 import numpy as np
 import pandas as pd
 
-from persiste.core.tree_building import (
-    TreeInferenceMetadata,
-    infer_tree_from_binary_matrix,
-)
+from persiste.core.tree_building import TreeInferenceMetadata
 from persiste.core.trees import TreeStructure
+from persiste.core.tree_utils import (
+    prepare_tree_from_binary_matrix,
+    validate_tree_with_binary_matrix,
+)
 
 from .constraints.gene_constraint import GeneContentConstraint
 from .inference.gene_inference import GeneContentData, GeneContentInference
@@ -195,38 +196,14 @@ def fit(
         print(f"  Genes: {len(gene_names)}")
     
     # Load or infer tree
-    if tree is None:
-        if verbose:
-            print(f"\nInferring tree from PAM using {tree_method}...")
-        tree_obj, tree_metadata = infer_tree_from_binary_matrix(
-            pam_array, taxon_names, method=tree_method
-        )
-        
-        # Validate inferred tree
-        validation = _validate_inferred_tree(tree_obj, pam_array)
-        if not validation["valid"]:
-            raise ValueError(f"Inferred tree validation failed: {validation['errors']}")
-        
-        if verbose and validation["warnings"]:
-            print("  Warnings:")
-            for warning in validation["warnings"]:
-                print(f"    ⚠ {warning}")
-        
-    elif isinstance(tree, (str, Path)):
-        if verbose:
-            print(f"\nLoading tree from: {tree}")
-        from persiste.core.trees import load_tree
-        tree_obj = load_tree(str(tree))
-        tree_metadata = TreeInferenceMetadata(source="provided")
-        
-    elif isinstance(tree, TreeStructure):
-        tree_obj = tree
-        tree_metadata = TreeInferenceMetadata(source="provided")
-    else:
-        raise TypeError(f"tree must be file path, TreeStructure, or None, got {type(tree)}")
-    
-    if verbose:
-        print(f"  Tree: {tree_obj.n_tips} tips, {tree_obj.n_nodes} total nodes")
+    tree_obj, tree_metadata = prepare_tree_from_binary_matrix(
+        binary_matrix=pam_array,
+        taxon_names=taxon_names,
+        tree=tree,
+        tree_method=tree_method,
+        verbose=verbose,
+        validator=validate_tree_with_binary_matrix,
+    )
     
     # Create GeneContentData
     data = GeneContentData(
@@ -328,39 +305,3 @@ def fit_with_retention_test(
     return comparison
 
 
-def _validate_inferred_tree(tree: TreeStructure, pam: np.ndarray) -> dict:
-    """
-    Lightweight validation to ensure inferred trees align with PAM dimensions.
-    Mirrored from the former genecontent.tree_inference helper.
-    """
-    results = {"valid": True, "errors": [], "warnings": []}
-    
-    if tree.n_tips != pam.shape[0]:
-        results["valid"] = False
-        results["errors"].append(
-            f"Tree has {tree.n_tips} tips but PAM has {pam.shape[0]} rows"
-        )
-    
-    if not np.all(np.isfinite(tree.branch_lengths)):
-        results["valid"] = False
-        results["errors"].append("Tree has non-finite branch lengths")
-    
-    if np.any(tree.branch_lengths < 0):
-        results["valid"] = False
-        results["errors"].append("Tree has negative branch lengths")
-    
-    positive_branches = tree.branch_lengths[tree.branch_lengths > 0]
-    if len(positive_branches) > 0:
-        min_branch = float(np.min(positive_branches))
-        if min_branch < 1e-10:
-            results["warnings"].append(
-                f"Very short branch lengths detected (min: {min_branch:.2e})"
-            )
-    
-    max_branch = float(np.max(tree.branch_lengths))
-    if max_branch > 10:
-        results["warnings"].append(
-            f"Very long branch detected (max: {max_branch:.2f})"
-        )
-    
-    return results

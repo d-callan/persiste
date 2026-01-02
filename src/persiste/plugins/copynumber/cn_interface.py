@@ -8,7 +8,11 @@ from pathlib import Path
 
 import numpy as np
 
-from persiste.core.trees import TreeStructure, load_tree
+from persiste.core.tree_utils import (
+    prepare_tree_from_binary_matrix,
+    validate_tree_with_binary_matrix,
+)
+from persiste.core.trees import TreeStructure
 from persiste.plugins.copynumber.states.cn_states import (
     CopyNumberState,
     get_sparse_transition_graph,
@@ -31,6 +35,7 @@ from persiste.plugins.copynumber.data.cn_data import (
     CopyNumberData,
     CopyNumberResult,
 )
+from persiste.plugins.copynumber.data.loaders import load_cn_matrix
 
 
 def compute_family_likelihood(
@@ -167,9 +172,11 @@ def fit(
         print("=" * 70)
     
     # Load/validate data
-    if isinstance(cn_matrix, (str, Path)):
-        # TODO: Implement file loading
-        raise NotImplementedError("File loading not yet implemented")
+    cn_matrix, family_names, taxon_names = load_cn_matrix(
+        cn_matrix,
+        family_names=family_names,
+        taxon_names=taxon_names,
+    )
     
     # Check if values need binning
     if cn_matrix.max() > 3:
@@ -178,11 +185,6 @@ def fit(
         cn_matrix = CopyNumberState.bin_matrix(cn_matrix, ploidy=ploidy)
     
     # Create data object
-    if family_names is None:
-        family_names = [f"family_{i}" for i in range(cn_matrix.shape[0])]
-    if taxon_names is None:
-        taxon_names = [f"taxon_{i}" for i in range(cn_matrix.shape[1])]
-    
     data = CopyNumberData(
         cn_matrix=cn_matrix,
         family_names=family_names,
@@ -194,34 +196,16 @@ def fit(
         data.print_summary()
     
     # Load or infer tree
-    if tree is None:
-        if verbose:
-            print(f"\nInferring tree from CN matrix using {tree_method}...")
-        
-        from persiste.core.tree_building import infer_tree_from_binary_matrix
-        
-        # Convert CN to presence/absence (transpose to taxa × families)
-        pam = (cn_matrix.T > 0).astype(int)
-        
-        tree_obj, _ = infer_tree_from_binary_matrix(
-            binary_matrix=pam,
-            taxon_names=taxon_names,
-            method=tree_method,
-        )
-        
-        if verbose:
-            print(f"  Tree built: {tree_obj.n_tips} tips, {tree_obj.n_nodes} total nodes")
-    elif isinstance(tree, (str, Path)):
-        tree_obj = load_tree(tree)
-        if verbose:
-            print(f"\nLoaded tree from {tree}: {tree_obj.n_tips} tips")
-    elif isinstance(tree, TreeStructure):
-        tree_obj = tree
-    else:
-        raise TypeError(
-            "tree must be a TreeStructure, path to Newick file, or None "
-            f"(got {type(tree)})"
-        )
+    # Convert to binary matrix (taxa × families) for tree inference
+    pam = (cn_matrix.T > 0).astype(int)
+    tree_obj, _ = prepare_tree_from_binary_matrix(
+        binary_matrix=pam,
+        taxon_names=taxon_names,
+        tree=tree,
+        tree_method=tree_method,
+        verbose=verbose,
+        validator=validate_tree_with_binary_matrix,
+    )
     
     # Create baseline model
     if baseline_params is None:

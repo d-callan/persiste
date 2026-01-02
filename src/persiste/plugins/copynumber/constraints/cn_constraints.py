@@ -15,6 +15,13 @@ from dataclasses import dataclass
 from typing import Dict, Tuple, Optional, Set
 import numpy as np
 
+from persiste.plugins.copynumber.states.cn_states import (
+    get_sparse_transition_graph,
+    validate_transition_matrix,
+)
+
+MAX_RATE = 1e6
+
 
 @dataclass
 class CopyNumberConstraint(ABC):
@@ -281,17 +288,35 @@ def apply_constraint(
         >>> Q_constrained = apply_constraint(Q_base, constraint, theta=-0.5)
     """
     Q = baseline_Q.copy()
-    
     # Get multipliers from constraint
     multipliers = constraint.get_rate_multipliers(theta, family_idx, lineage_id)
-    
     # Apply multipliers to affected transitions
     for (i, j), mult in multipliers.items():
+        if not np.isfinite(mult) or mult < 0:
+            raise ValueError(
+                f"Constraint produced invalid multiplier {mult} for transition {(i, j)}"
+            )
         Q[i, j] *= mult
+        if Q[i, j] > MAX_RATE:
+            raise ValueError(
+                f"Constraint produced excessively large rate {Q[i, j]} for transition {(i, j)}"
+            )
+    
+    if not np.all(np.isfinite(Q)):
+        raise ValueError("Constraint produced non-finite entries in rate matrix")
     
     # Re-normalize diagonal to maintain valid rate matrix
     for i in range(4):
-        Q[i, i] = -Q[i, :].sum() + Q[i, i]
+        row_sum = Q[i, :].sum() - Q[i, i]
+        Q[i, i] = -row_sum
+        if Q[i, i] >= 0:
+            raise ValueError(
+                f"Invalid diagonal entry after constraint application at row {i}: {Q[i, i]}"
+            )
+    
+    # Validate against sparse transition graph to ensure CTMC properties
+    allowed = get_sparse_transition_graph()
+    validate_transition_matrix(Q, allowed)
     
     return Q
 
