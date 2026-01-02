@@ -8,17 +8,18 @@ without requiring a phylogenetic tree. Tree inference is explicit and transparen
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional, Union
+
 import numpy as np
 import pandas as pd
 
-from persiste.core.trees import TreeStructure
-from .tree_inference import (
-    infer_tree_from_pam,
+from persiste.core.tree_building import (
     TreeInferenceMetadata,
-    validate_inferred_tree,
+    infer_tree_from_binary_matrix,
 )
+from persiste.core.trees import TreeStructure
+
+from .constraints.gene_constraint import GeneContentConstraint
 from .inference.gene_inference import GeneContentData, GeneContentInference
-from .constraints.gene_constraint import GeneContentConstraint, NullConstraint
 
 
 @dataclass
@@ -197,12 +198,12 @@ def fit(
     if tree is None:
         if verbose:
             print(f"\nInferring tree from PAM using {tree_method}...")
-        tree_obj, tree_metadata = infer_tree_from_pam(
+        tree_obj, tree_metadata = infer_tree_from_binary_matrix(
             pam_array, taxon_names, method=tree_method
         )
         
         # Validate inferred tree
-        validation = validate_inferred_tree(tree_obj, pam_array)
+        validation = _validate_inferred_tree(tree_obj, pam_array)
         if not validation["valid"]:
             raise ValueError(f"Inferred tree validation failed: {validation['errors']}")
         
@@ -325,3 +326,41 @@ def fit_with_retention_test(
     )
     
     return comparison
+
+
+def _validate_inferred_tree(tree: TreeStructure, pam: np.ndarray) -> dict:
+    """
+    Lightweight validation to ensure inferred trees align with PAM dimensions.
+    Mirrored from the former genecontent.tree_inference helper.
+    """
+    results = {"valid": True, "errors": [], "warnings": []}
+    
+    if tree.n_tips != pam.shape[0]:
+        results["valid"] = False
+        results["errors"].append(
+            f"Tree has {tree.n_tips} tips but PAM has {pam.shape[0]} rows"
+        )
+    
+    if not np.all(np.isfinite(tree.branch_lengths)):
+        results["valid"] = False
+        results["errors"].append("Tree has non-finite branch lengths")
+    
+    if np.any(tree.branch_lengths < 0):
+        results["valid"] = False
+        results["errors"].append("Tree has negative branch lengths")
+    
+    positive_branches = tree.branch_lengths[tree.branch_lengths > 0]
+    if len(positive_branches) > 0:
+        min_branch = float(np.min(positive_branches))
+        if min_branch < 1e-10:
+            results["warnings"].append(
+                f"Very short branch lengths detected (min: {min_branch:.2e})"
+            )
+    
+    max_branch = float(np.max(tree.branch_lengths))
+    if max_branch > 10:
+        results["warnings"].append(
+            f"Very long branch detected (max: {max_branch:.2f})"
+        )
+    
+    return results

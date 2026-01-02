@@ -2,16 +2,15 @@
 Tests for tree inference from presence/absence matrices.
 """
 
-import pytest
 import numpy as np
-from persiste.plugins.genecontent.tree_inference import (
-    jaccard_distance,
+import pytest
+
+from persiste.core.tree_building import (
     hamming_distance,
+    infer_tree_from_binary_matrix,
+    jaccard_distance,
     upgma_tree,
-    infer_tree_from_pam,
-    TreeInferenceMetadata,
 )
-from persiste.core.trees import TreeStructure
 
 
 class TestDistanceMetrics:
@@ -168,7 +167,7 @@ class TestInferTreeFromPAM:
         ])
         taxon_names = ['A', 'B', 'C']
         
-        tree, metadata = infer_tree_from_pam(pam, taxon_names, method='jaccard_upgma')
+        tree, metadata = infer_tree_from_binary_matrix(pam, taxon_names, method='jaccard_upgma')
         
         assert tree.n_tips == 3
         assert metadata.source == 'inferred'
@@ -176,7 +175,7 @@ class TestInferTreeFromPAM:
         assert metadata.distance_metric == 'jaccard'
         assert metadata.clustering_method == 'upgma'
         assert metadata.n_taxa == 3
-        assert metadata.n_genes == 4
+        assert metadata.n_features == 4
     
     def test_infer_hamming_upgma(self):
         """Test Hamming + UPGMA inference."""
@@ -187,7 +186,7 @@ class TestInferTreeFromPAM:
         ])
         taxon_names = ['A', 'B', 'C']
         
-        tree, metadata = infer_tree_from_pam(pam, taxon_names, method='hamming_upgma')
+        tree, metadata = infer_tree_from_binary_matrix(pam, taxon_names, method='hamming_upgma')
         
         assert tree.n_tips == 3
         assert metadata.distance_metric == 'hamming'
@@ -198,11 +197,11 @@ class TestInferTreeFromPAM:
         pam = np.random.binomial(1, 0.5, size=(20, 100))
         taxon_names = [f'taxon_{i}' for i in range(20)]
         
-        tree, metadata = infer_tree_from_pam(pam, taxon_names)
+        tree, metadata = infer_tree_from_binary_matrix(pam, taxon_names)
         
         assert tree.n_tips == 20
         assert metadata.n_taxa == 20
-        assert metadata.n_genes == 100
+        assert metadata.n_features == 100
     
     def test_infer_validates_input(self):
         """Test that input validation works."""
@@ -210,7 +209,7 @@ class TestInferTreeFromPAM:
         taxon_names = ['A', 'B', 'C']  # Wrong length
         
         with pytest.raises(ValueError, match="taxon_names length"):
-            infer_tree_from_pam(pam, taxon_names)
+            infer_tree_from_binary_matrix(pam, taxon_names)
     
     def test_infer_unknown_method(self):
         """Test that unknown method raises error."""
@@ -218,7 +217,7 @@ class TestInferTreeFromPAM:
         taxon_names = ['A', 'B']
         
         with pytest.raises(ValueError, match="Unknown method"):
-            infer_tree_from_pam(pam, taxon_names, method='unknown')
+            infer_tree_from_binary_matrix(pam, taxon_names, method='unknown')
 
 
 class TestTreeInferencePerformance:
@@ -233,7 +232,7 @@ class TestTreeInferencePerformance:
         taxon_names = [f'strain_{i}' for i in range(50)]
         
         start = time.time()
-        tree, metadata = infer_tree_from_pam(pam, taxon_names)
+        tree, metadata = infer_tree_from_binary_matrix(pam, taxon_names)
         elapsed = time.time() - start
         
         assert tree.n_tips == 50
