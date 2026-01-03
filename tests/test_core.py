@@ -89,10 +89,12 @@ def test_constraint_model_creation():
     """Test constraint model instantiation."""
     states = StateSpace.from_types(['α', 'β'])
     baseline = Baseline.uniform()
+    graph = TransitionGraph.complete(states)
     
     model = ConstraintModel(
         states=states,
         baseline=baseline,
+        graph=graph,
         constraint_structure='per_transition'
     )
     
@@ -104,11 +106,13 @@ def test_constraint_model_invalid_structure():
     """Test that invalid constraint structure raises error."""
     states = StateSpace.from_types(['α', 'β'])
     baseline = Baseline.uniform()
+    graph = TransitionGraph.complete(states)
     
     with pytest.raises(ValueError):
         ConstraintModel(
             states=states,
             baseline=baseline,
+            graph=graph,
             constraint_structure='invalid'
         )
 

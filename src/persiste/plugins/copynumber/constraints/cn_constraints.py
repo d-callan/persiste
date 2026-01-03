@@ -15,19 +15,24 @@ from dataclasses import dataclass
 from typing import Dict, Tuple, Optional, Set
 import numpy as np
 
+from persiste.core.constraint_utils import (
+    MAX_RATE as CORE_MAX_RATE,
+    MultiplicativeConstraint,
+    apply_multiplicative_constraint,
+)
 from persiste.plugins.copynumber.states.cn_states import (
     get_sparse_transition_graph,
     validate_transition_matrix,
 )
 
-MAX_RATE = 1e6
+MAX_RATE = CORE_MAX_RATE
 
 
 @dataclass
-class CopyNumberConstraint(ABC):
+class CopyNumberConstraint(MultiplicativeConstraint, ABC):
     """
     Abstract base class for copy number constraints.
-    
+
     Constraints modify baseline rates via multiplicative factors:
         effective_rate = baseline_rate × exp(θ)
     
@@ -270,55 +275,32 @@ def apply_constraint(
 ) -> np.ndarray:
     """
     Apply constraint to baseline rate matrix.
-    
     Args:
         baseline_Q: (4, 4) baseline rate matrix
         constraint: Constraint to apply
         theta: Constraint parameter
         family_idx: Optional family index
         lineage_id: Optional lineage identifier
-    
     Returns:
         (4, 4) constrained rate matrix
-    
     Example:
         >>> baseline = create_baseline('global')
         >>> Q_base = baseline.build_rate_matrix()
         >>> constraint = DosageStabilityConstraint()
         >>> Q_constrained = apply_constraint(Q_base, constraint, theta=-0.5)
     """
-    Q = baseline_Q.copy()
-    # Get multipliers from constraint
     multipliers = constraint.get_rate_multipliers(theta, family_idx, lineage_id)
-    # Apply multipliers to affected transitions
-    for (i, j), mult in multipliers.items():
-        if not np.isfinite(mult) or mult < 0:
-            raise ValueError(
-                f"Constraint produced invalid multiplier {mult} for transition {(i, j)}"
-            )
-        Q[i, j] *= mult
-        if Q[i, j] > MAX_RATE:
-            raise ValueError(
-                f"Constraint produced excessively large rate {Q[i, j]} for transition {(i, j)}"
-            )
-    
-    if not np.all(np.isfinite(Q)):
-        raise ValueError("Constraint produced non-finite entries in rate matrix")
-    
-    # Re-normalize diagonal to maintain valid rate matrix
-    for i in range(4):
-        row_sum = Q[i, :].sum() - Q[i, i]
-        Q[i, i] = -row_sum
-        if Q[i, i] >= 0:
-            raise ValueError(
-                f"Invalid diagonal entry after constraint application at row {i}: {Q[i, i]}"
-            )
-    
-    # Validate against sparse transition graph to ensure CTMC properties
     allowed = get_sparse_transition_graph()
-    validate_transition_matrix(Q, allowed)
-    
-    return Q
+
+    def _validator(q: np.ndarray) -> None:
+        validate_transition_matrix(q, allowed)
+
+    return apply_multiplicative_constraint(
+        baseline_Q,
+        multipliers,
+        max_rate=MAX_RATE,
+        validator=_validator,
+    )
 
 
 def create_constraint(constraint_type: str, **kwargs) -> CopyNumberConstraint:

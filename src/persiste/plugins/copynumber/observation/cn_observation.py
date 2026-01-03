@@ -5,10 +5,11 @@ Maps observed copy numbers to state likelihoods.
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+
 import numpy as np
 
+from persiste.core.tip_observations import OneHotTipObservation
 from persiste.plugins.copynumber.states.cn_states import CopyNumberState
 
 
@@ -60,42 +61,17 @@ class DeterministicBinObservation(CopyNumberObservation):
         >>> likelihood = obs_model.get_tip_likelihood(1)
         >>> # likelihood = [0, 1, 0, 0]
     """
-    
+    n_states: int = field(default_factory=CopyNumberState.n_states)
+    _tip_model: OneHotTipObservation = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self._tip_model = OneHotTipObservation(self.n_states)
+
     def get_tip_likelihood(self, observed_state: int) -> np.ndarray:
-        """
-        Get deterministic tip likelihood.
-        
-        Args:
-            observed_state: Observed binned state (0-3)
-        
-        Returns:
-            (4,) one-hot vector
-        """
-        if not 0 <= observed_state <= 3:
-            raise ValueError(f"observed_state must be 0-3, got {observed_state}")
-        
-        likelihood = np.zeros(4)
-        likelihood[observed_state] = 1.0
-        
-        return likelihood
-    
+        return self._tip_model.get_tip_likelihood(observed_state)
+
     def get_tip_likelihoods_matrix(self, observed_states: np.ndarray) -> np.ndarray:
-        """
-        Get tip likelihoods for multiple observations.
-        
-        Args:
-            observed_states: (n_taxa,) array of observed states
-        
-        Returns:
-            (n_taxa, 4) matrix of tip likelihoods
-        """
-        n_taxa = len(observed_states)
-        likelihoods = np.zeros((n_taxa, 4))
-        
-        for i, state in enumerate(observed_states):
-            likelihoods[i] = self.get_tip_likelihood(state)
-        
-        return likelihoods
+        return self._tip_model.get_tip_likelihoods_matrix(observed_states)
 
 
 @dataclass

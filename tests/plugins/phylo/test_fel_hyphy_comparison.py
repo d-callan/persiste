@@ -6,7 +6,22 @@ against known HyPhy FEL output to validate correctness.
 """
 
 import sys
+
 import numpy as np
+
+from persiste.core.trees import TreeStructure
+from persiste.plugins.phylo.analyses.fel import FELAnalysis
+from persiste.plugins.phylo.baselines.mg94 import MG94Baseline
+from persiste.plugins.phylo.observation.phylo_ctmc import PhyloCTMCObservationModel
+from persiste.plugins.phylo.states.codons import CodonStateSpace
+from persiste.plugins.phylo.transitions.codon_graph import CodonTransitionGraph
+
+
+def _align_to_tree(tree: TreeStructure, taxa_order: list[str], alignment: np.ndarray) -> np.ndarray:
+    """Reorder alignment rows to match TreeStructure tip ordering."""
+    index_map = {name: idx for idx, name in enumerate(taxa_order)}
+    row_indices = [index_map[name] for name in tree.tip_names]
+    return alignment[row_indices]
 
 
 def test_fel_simple_example():
@@ -20,41 +35,28 @@ def test_fel_simple_example():
     """
     print("Testing FEL on simple example...")
     
-    from persiste.plugins.phylo.data.tree import PhylogeneticTree
-    from persiste.plugins.phylo.observation.phylo_ctmc import PhyloCTMCObservationModel
-    from persiste.plugins.phylo.states.codons import CodonStateSpace
-    from persiste.plugins.phylo.baselines.mg94 import MG94Baseline
-    from persiste.plugins.phylo.transitions.codon_graph import CodonTransitionGraph
-    from persiste.plugins.phylo.analyses.fel import FELAnalysis
-    
-    # Simple 4-taxon tree
     newick = "((A:0.05,B:0.05):0.05,(C:0.05,D:0.05):0.05);"
-    tree = PhylogeneticTree.from_string(newick)
+    tree = TreeStructure.from_newick(newick)
     
     codon_space = CodonStateSpace.universal()
     graph = CodonTransitionGraph(codon_space)
     baseline = MG94Baseline(codon_space, graph, kappa=2.0, omega=1.0)
     
-    # Create alignment with known patterns
-    # Site 0: Perfectly conserved (ATG in all taxa)
-    # Site 1: Synonymous variation (TTT <-> TTC, both Phe)
-    # Site 2: Nonsynonymous variation (ATG <-> GTG, Met <-> Val)
-    
-    atg_idx = codon_space.index("ATG")  # Met
-    gtg_idx = codon_space.index("GTG")  # Val
-    ttt_idx = codon_space.index("TTT")  # Phe
-    ttc_idx = codon_space.index("TTC")  # Phe
+    atg_idx = codon_space.index("ATG")
+    gtg_idx = codon_space.index("GTG")
+    ttt_idx = codon_space.index("TTT")
+    ttc_idx = codon_space.index("TTC")
     
     alignment = np.array([
-        [atg_idx, ttt_idx, atg_idx],  # A
-        [atg_idx, ttc_idx, gtg_idx],  # B
-        [atg_idx, ttt_idx, atg_idx],  # C
-        [atg_idx, ttc_idx, gtg_idx],  # D
+        [atg_idx, ttt_idx, atg_idx],
+        [atg_idx, ttc_idx, gtg_idx],
+        [atg_idx, ttt_idx, atg_idx],
+        [atg_idx, ttc_idx, gtg_idx],
     ])
+    alignment = _align_to_tree(tree, ["A", "B", "C", "D"], alignment)
     
     obs_model = PhyloCTMCObservationModel(graph, tree, alignment)
     
-    # Run FEL
     fel = FELAnalysis(obs_model, baseline, p_threshold=0.1)
     results = fel.run()
     
@@ -62,17 +64,11 @@ def test_fel_simple_example():
     print(f"  Site 1 (synonymous): ω={results[1].omega:.4f}, p={results[1].p_value:.4f}, sig={results[1].significant}")
     print(f"  Site 2 (nonsynonymous): ω={results[2].omega:.4f}, p={results[2].p_value:.4f}, sig={results[2].significant}")
     
-    # Expected behavior:
-    # - Site 0: conserved, should not be significant
-    # - Site 1: synonymous changes don't affect ω much (ω ≈ 1)
-    # - Site 2: nonsynonymous changes, ω depends on tree/data
-    
     assert not results[0].significant, "Conserved site should not be significant"
     
     print("\n  ✓ FEL behavior matches expectations")
     print(f"  ✓ Summary: {fel}")
     
-    # Export to HyPhy format
     json_output = fel.to_hyphy_json()
     print(f"\n  ✓ HyPhy JSON export successful")
     print(f"  ✓ Analysis: {json_output['analysis']}")
@@ -91,16 +87,9 @@ def test_fel_omega_estimates():
     """
     print("\nTesting FEL ω estimate properties...")
     
-    from persiste.plugins.phylo.data.tree import PhylogeneticTree
-    from persiste.plugins.phylo.observation.phylo_ctmc import PhyloCTMCObservationModel
-    from persiste.plugins.phylo.states.codons import CodonStateSpace
-    from persiste.plugins.phylo.baselines.mg94 import MG94Baseline
-    from persiste.plugins.phylo.transitions.codon_graph import CodonTransitionGraph
-    from persiste.plugins.phylo.analyses.fel import FELAnalysis
     
-    # Setup
     newick = "((A:0.1,B:0.1):0.1,(C:0.1,D:0.1):0.1);"
-    tree = PhylogeneticTree.from_string(newick)
+    tree = TreeStructure.from_newick(newick)
     
     codon_space = CodonStateSpace.universal()
     graph = CodonTransitionGraph(codon_space)
@@ -117,6 +106,7 @@ def test_fel_omega_estimates():
         [atg_idx, atg_idx, ttc_idx, ggg_idx],
         [atg_idx, ttc_idx, ttc_idx, ggg_idx],
     ])
+    alignment = _align_to_tree(tree, ["A", "B", "C", "D"], alignment)
     
     obs_model = PhyloCTMCObservationModel(graph, tree, alignment)
     
@@ -150,17 +140,10 @@ def test_fel_likelihood_ratio_test():
     """
     print("\nTesting FEL likelihood ratio test...")
     
-    from persiste.plugins.phylo.data.tree import PhylogeneticTree
-    from persiste.plugins.phylo.observation.phylo_ctmc import PhyloCTMCObservationModel
-    from persiste.plugins.phylo.states.codons import CodonStateSpace
-    from persiste.plugins.phylo.baselines.mg94 import MG94Baseline
-    from persiste.plugins.phylo.transitions.codon_graph import CodonTransitionGraph
-    from persiste.plugins.phylo.analyses.fel import FELAnalysis
     from scipy import stats
     
-    # Setup
     newick = "((A:0.1,B:0.1):0.1,(C:0.1,D:0.1):0.1);"
-    tree = PhylogeneticTree.from_string(newick)
+    tree = TreeStructure.from_newick(newick)
     
     codon_space = CodonStateSpace.universal()
     graph = CodonTransitionGraph(codon_space)
@@ -176,6 +159,7 @@ def test_fel_likelihood_ratio_test():
         [atg_idx, ttc_idx],
         [atg_idx, ttc_idx],
     ])
+    alignment = _align_to_tree(tree, ["A", "B", "C", "D"], alignment)
     
     obs_model = PhyloCTMCObservationModel(graph, tree, alignment)
     

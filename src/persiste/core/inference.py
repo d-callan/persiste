@@ -200,98 +200,14 @@ class ConstraintInference:
                 "Currently only 'MLE' is supported."
             )
         
-        # Negative log-likelihood for minimization
-        def nll(theta_vec):
-            params = self.model.unpack(theta_vec)
-            ll = self.log_likelihood(data, params)
-            
-            # Add sparsity regularization for sparse constraint structure
-            if self.model.constraint_structure == "sparse":
-                if self.model.sparsity == "soft":
-                    # Bayesian shrinkage: log-prior term
-                    # Prior: θ ~ Gamma(α, β) with strong shrinkage
-                    # Equivalent to adding -log p(θ) to negative log-likelihood
-                    α = 1.0  # Shape parameter
-                    β = self.model.strength  # Rate parameter (higher = stronger shrinkage)
-                    
-                    log_prior = 0.0
-                    for θ_val in theta_vec:
-                        # Gamma log-prior: (α-1)log(θ) - βθ
-                        log_prior += (α - 1) * np.log(θ_val + 1e-10) - β * θ_val
-                    
-                    # Return negative (log-likelihood + log-prior)
-                    return -(ll + log_prior)
-                
-                elif self.model.sparsity == "penalized":
-                    # Penalized MLE: L1 penalty
-                    # Objective = log-likelihood - λ||θ||_1
-                    penalty = self.model.strength * np.sum(theta_vec)
-                    return -(ll - penalty)
-                
-                elif self.model.sparsity == "latent":
-                    # Spike-and-slab mixture model
-                    # TODO: Implement EM or MCMC for latent indicators
-                    raise NotImplementedError(
-                        "Latent spike-and-slab not yet implemented. "
-                        "Use 'soft' or 'penalized' for now."
-                    )
-                
-                else:
-                    raise ValueError(f"Unknown sparsity mode: {self.model.sparsity}")
-            
-            return -ll
-        
-        # Initial parameters (neutral: θ = 1 everywhere)
-        theta0 = self.model.initial_parameters()
-        
-        # Parameter bounds
-        if "bounds" in kwargs:
-            bounds = kwargs["bounds"]
-        else:
-            # Default bounds based on facilitation policy
-            if self.model.allow_facilitation:
-                # Allow θ > 1 (facilitation)
-                bounds = [(0.0, None) for _ in theta0]
-            else:
-                # Pure constraint: θ ∈ [0, 1]
-                bounds = [(0.0, 1.0) for _ in theta0]
-        
-        # Optimize
-        result = optimize.minimize(
-            nll,
-            theta0,
-            bounds=bounds,
-            options=kwargs.get("options", {})
+        raise NotImplementedError(
+            "ConstraintInference.fit() not yet implemented. "
+            "Full MLE inference pipeline will land in a future change."
         )
         
-        if not result.success:
-            import warnings
-            warnings.warn(f"Optimization did not converge: {result.message}")
-        
-        # Unpack fitted parameters
-        fitted_params = self.model.unpack(result.x)
-        
-        # Compute AIC and BIC
-        k = self.model.num_free_parameters(fitted_params)
-        n = data.total_transitions()
-        ll = -result.fun
-        
-        aic = 2 * k - 2 * ll
-        bic = k * np.log(n) - 2 * ll
-        
-        return ConstraintResult(
-            model=self.model,
-            parameters=fitted_params,
-            method="MLE",
-            log_likelihood=ll,
-            aic=aic,
-            bic=bic,
-            metadata={
-                "success": result.success,
-                "message": result.message,
-                "nfev": result.nfev,
-            }
-        )
+        # The remainder of the MLE path will be implemented once the optimizer
+        # contract is finalized. For now the explicit NotImplemented above will
+        # halt execution before reaching this block.
     
     def test(
         self,

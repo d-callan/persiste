@@ -122,7 +122,7 @@ class AssemblyState:
         other_dict = other.get_parts_dict()
         
         for part, count in self_dict.items():
-            if other_dict.get(part, 0) < count:
+            if other_dict.get(part) != count:
                 return False
         
         return True

@@ -8,8 +8,9 @@ from persiste.plugins.copynumber.baselines.cn_baseline import (
     create_baseline,
 )
 from persiste.plugins.copynumber.constraints.cn_constraints import (
+    MAX_RATE,
     AmplificationBiasConstraint,
-    DosageStabilityConstraint,
+    CopyNumberConstraint,
     apply_constraint,
     create_constraint,
 )
@@ -71,6 +72,55 @@ class TestConstraints:
         assert pytest.approx(Q_constrained[2, 1]) == pytest.approx(Q_base[2, 1] * contract_mult)
         # Transitions not mentioned remain equal
         assert pytest.approx(Q_constrained[0, 1]) == pytest.approx(Q_base[0, 1])
+
+    def test_constraint_invalid_multiplier_rejected(self):
+        baseline = create_baseline('global')
+        Q_base = baseline.build_rate_matrix()
+
+        class NaNConstraint(CopyNumberConstraint):
+            def get_rate_multipliers(self, theta, family_idx=None, lineage_id=None):
+                return {(0, 1): np.nan}
+
+            def get_affected_transitions(self):
+                return {(0, 1)}
+
+        constraint = NaNConstraint()
+        with pytest.raises(ValueError, match="invalid multiplier"):
+            apply_constraint(Q_base, constraint, theta=0.0)
+
+    def test_constraint_zero_outgoing_rates_raise(self):
+        baseline = create_baseline('global')
+        Q_base = baseline.build_rate_matrix()
+
+        class ZeroConstraint(CopyNumberConstraint):
+            def get_rate_multipliers(self, theta, family_idx=None, lineage_id=None):
+                return {(0, 1): 0.0}
+
+            def get_affected_transitions(self):
+                return {(0, 1)}
+
+        constraint = ZeroConstraint()
+        with pytest.raises(ValueError, match="Invalid diagonal entry"):
+            apply_constraint(Q_base, constraint, theta=0.0)
+
+    def test_constraint_excessive_rate_guard(self):
+        baseline = create_baseline('global', gain_rate=0.5, loss_rate=0.5, amplify_rate=0.5, contract_rate=0.5)
+        Q_base = baseline.build_rate_matrix()
+        multiplier = (MAX_RATE / Q_base[1, 2]) * 2
+
+        class HugeConstraint(CopyNumberConstraint):
+            def __init__(self, mult):
+                self._mult = mult
+
+            def get_rate_multipliers(self, theta, family_idx=None, lineage_id=None):
+                return {(1, 2): self._mult}
+
+            def get_affected_transitions(self):
+                return {(1, 2)}
+
+        constraint = HugeConstraint(multiplier)
+        with pytest.raises(ValueError, match="excessively large rate"):
+            apply_constraint(Q_base, constraint, theta=0.0)
 
 
 class TestObservationAndData:

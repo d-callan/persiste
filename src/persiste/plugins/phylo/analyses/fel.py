@@ -91,6 +91,7 @@ class FELAnalysis:
         baseline: MG94Baseline,
         p_threshold: float = 0.1,
         use_site_patterns: bool = True,
+    ):
         """
         Initialize FEL analysis.
         
@@ -100,13 +101,13 @@ class FELAnalysis:
             p_threshold: P-value threshold for significance (default: 0.1)
             use_site_patterns: Whether to use site patterns compression (default: True)
         """
+        self.obs_model = obs_model
         self.baseline = baseline
         self.p_threshold = p_threshold
         self.use_site_patterns = use_site_patterns
         
-        # Compress alignment if requested
+        if self.use_site_patterns:
             self.site_patterns = SitePatterns(obs_model.alignment)
-            print(f"Site patterns: {self.site_patterns}")
         else:
             self.site_patterns = None
         

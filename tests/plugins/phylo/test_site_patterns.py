@@ -4,6 +4,13 @@ import sys
 import numpy as np
 
 
+def _align_to_tree(order: list[str], tree_tip_names: list[str], alignment: np.ndarray) -> np.ndarray:
+    """Reorder alignment rows to follow the TreeStructure tip ordering."""
+    name_to_idx = {name: idx for idx, name in enumerate(order)}
+    row_indices = [name_to_idx[name] for name in tree_tip_names]
+    return alignment[row_indices]
+
+
 def test_site_patterns_basic():
     """Test basic site patterns compression."""
     print("Testing basic site patterns compression...")
@@ -135,7 +142,7 @@ def test_site_patterns_with_likelihood():
     """Test site patterns with actual likelihood calculation."""
     print("Testing site patterns with likelihood...")
     
-    from persiste.plugins.phylo.data.tree import PhylogeneticTree
+    from persiste.core.trees import TreeStructure
     from persiste.plugins.phylo.observation.phylo_ctmc import PhyloCTMCObservationModel
     from persiste.plugins.phylo.states.codons import CodonStateSpace
     from persiste.plugins.phylo.baselines.mg94 import MG94Baseline
@@ -144,7 +151,7 @@ def test_site_patterns_with_likelihood():
     
     # Setup
     newick = "((A:0.1,B:0.1):0.1,(C:0.1,D:0.1):0.1);"
-    tree = PhylogeneticTree.from_string(newick)
+    tree = TreeStructure.from_newick(newick)
     
     codon_space = CodonStateSpace.universal()
     graph = CodonTransitionGraph(codon_space)
@@ -160,6 +167,7 @@ def test_site_patterns_with_likelihood():
         [atg_idx, atg_idx, atg_idx, ttc_idx, ttc_idx],  # C
         [atg_idx, atg_idx, atg_idx, ttc_idx, ttc_idx],  # D
     ])
+    alignment = _align_to_tree(["A", "B", "C", "D"], tree.tip_names, alignment)
     
     # Compress patterns
     patterns = SitePatterns(alignment)
@@ -170,14 +178,14 @@ def test_site_patterns_with_likelihood():
     
     # Compute likelihood with compressed alignment
     obs_model_compressed = PhyloCTMCObservationModel(
-        graph, tree, patterns.compressed_alignment,
-        site_weights=patterns.weights
+        graph,
+        tree,
+        patterns.compressed_alignment,
+        site_weights=patterns.weights,
     )
     
     # Compute likelihood with original alignment
-    obs_model_original = PhyloCTMCObservationModel(
-        graph, tree, alignment
-    )
+    obs_model_original = PhyloCTMCObservationModel(graph, tree, alignment)
     
     from persiste.core.data import ObservedTransitions
     dummy_data = ObservedTransitions(counts={}, exposure=1.0)

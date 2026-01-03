@@ -1,6 +1,6 @@
 """Constraint parameter models."""
 
-from typing import Optional, Dict, Any, Callable, TYPE_CHECKING
+from typing import Optional, Dict, Any, TYPE_CHECKING
 from dataclasses import dataclass, field
 import numpy as np
 
@@ -188,6 +188,20 @@ class ConstraintModel:
         else:
             raise ValueError(f"Unknown constraint structure: {self.constraint_structure}")
     
+    def _get_transition_keys(self, params: Optional[Dict[str, Any]] = None) -> list[tuple[int, int]]:
+        """
+        Determine ordered transition keys for packing/unpacking parameters.
+        
+        Falls back to graph topology when parameters are unset so we can still
+        build neutral vectors for inference initialization.
+        """
+        source_params = params if params is not None else self.parameters
+        theta = source_params.get("theta", {})
+        if theta:
+            return sorted(theta.keys())
+        # Use graph topology as canonical ordering
+        return sorted(self.graph.iter_edges())
+    
     def num_free_parameters(self, parameters: Optional[Dict[str, Any]] = None) -> int:
         """
         Count number of free parameters in constraint model.
@@ -205,7 +219,7 @@ class ConstraintModel:
         
         if self.constraint_structure == "per_transition":
             # Each transition has its own θ
-            return len(θ)
+            return len(self._get_transition_keys(params))
         
         elif self.constraint_structure == "per_state":
             # Each state has its own θ
@@ -253,9 +267,8 @@ class ConstraintModel:
         
         if self.constraint_structure == "per_transition":
             # Pack transition-specific parameters
-            # Order: sorted by (i, j) for reproducibility
-            keys = sorted(θ.keys())
-            return np.array([θ[k] for k in keys])
+            keys = self._get_transition_keys(params)
+            return np.array([θ.get(k, 1.0) for k in keys])
         
         elif self.constraint_structure == "per_state":
             # Pack state-specific parameters
@@ -303,9 +316,7 @@ class ConstraintModel:
         
         if self.constraint_structure == "per_transition":
             # Unpack transition-specific parameters
-            # Need to know which transitions exist
-            current_θ = self.parameters.get("theta", {})
-            keys = sorted(current_θ.keys())
+            keys = self._get_transition_keys()
             
             if len(vector) != len(keys):
                 raise ValueError(f"Vector length {len(vector)} != expected {len(keys)}")
@@ -382,6 +393,8 @@ class ConstraintModel:
         
         # Default: neutral (θ = 1.0 for all parameters)
         n_params = self.num_free_parameters()
+        if n_params == 0:
+            return np.array([])
         return np.ones(n_params)
     
     def get_constrained_baseline(self, parameters: Optional[Dict[str, Any]] = None) -> "Baseline":

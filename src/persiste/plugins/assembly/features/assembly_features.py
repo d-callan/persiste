@@ -133,7 +133,7 @@ class AssemblyFeatureExtractor:
         Simple heuristic: check if source is a subassembly of target.
         Full implementation would track assembly history.
         """
-        if source.is_subassembly_of(target):
+        if self._is_submultiset(source.get_parts_dict(), target.get_parts_dict()):
             return 1
         return 0
     
@@ -177,6 +177,19 @@ class AssemblyFeatureExtractor:
                 entropy -= p * np.log(p)
         
         return entropy
+
+    @staticmethod
+    def _is_submultiset(source_parts: Dict[str, int], target_parts: Dict[str, int]) -> bool:
+        """
+        Check whether every part in source_parts appears at least as many times in target_parts.
+
+        This intentionally allows the target to have additional copies of a part so that
+        reuse detection considers true subassemblies rather than requiring an exact match.
+        """
+        for part, count in source_parts.items():
+            if target_parts.get(part, 0) < count:
+                return False
+        return True
     
     def get_feature_names(self) -> list[str]:
         """

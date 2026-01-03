@@ -175,6 +175,28 @@ class PhyloCTMCObservationModel(ObservationModel):
         
         return log_lik
     
+    def log_likelihood_with_alpha_beta(
+        self,
+        alpha: float,
+        beta: float,
+        baseline: Any,
+    ) -> float:
+        """
+        Compute total log-likelihood across all sites for fixed α and β.
+        
+        This preserves the legacy PhyloCTMCObservationModel API that FEL relied on.
+        """
+        total = 0.0
+        for site_idx in range(self.n_sites):
+            site_ll = self.site_log_likelihood_with_alpha_beta(
+                site_idx,
+                alpha,
+                beta,
+                baseline,
+            )
+            total += site_ll * self.site_weights[site_idx]
+        return float(total)
+    
     @property
     def n_sites(self) -> int:
         """Number of sites in alignment."""
