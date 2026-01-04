@@ -78,7 +78,7 @@ def test_fit_uses_facilitation_bounds(monkeypatch, observed_data):
 
     captured = {}
 
-    def fake_minimize(func, x0, bounds=None, options=None):
+    def fake_minimize(func, x0, bounds=None, options=None, **kwargs):
         captured["bounds"] = bounds
         captured["x0"] = x0
         # Return neutral parameters

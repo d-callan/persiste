@@ -199,15 +199,113 @@ class ConstraintInference:
                 f"Inference method '{method}' not yet implemented. "
                 "Currently only 'MLE' is supported."
             )
-        
-        raise NotImplementedError(
-            "ConstraintInference.fit() not yet implemented. "
-            "Full MLE inference pipeline will land in a future change."
+
+        theta0 = np.array(self.model.initial_parameters(), dtype=float)
+        if theta0.ndim == 0:
+            theta0 = theta0.reshape(1)
+        minimize_kwargs = dict(kwargs)
+        user_bounds = minimize_kwargs.pop("bounds", None)
+        options = minimize_kwargs.pop("options", None) or {}
+        minimize_method = minimize_kwargs.pop("minimize_method", None)
+
+        def _effective_sample_size(data_obj: Any) -> int:
+            if hasattr(data_obj, "total_transitions"):
+                total = data_obj.total_transitions()
+            elif hasattr(data_obj, "__len__"):
+                try:
+                    total = len(data_obj)  # type: ignore[arg-type]
+                except TypeError:
+                    total = 0
+            else:
+                total = 0
+            return max(int(total), 1)
+
+        def _vector_to_params(vector: np.ndarray) -> Dict[str, Any]:
+            vec = np.array(vector, dtype=float)
+            return self.model.unpack(vec)
+
+        if theta0.size == 0:
+            fitted_params = _vector_to_params(theta0)
+            ll_hat = float(self.log_likelihood(data, fitted_params))
+            k = self.model.num_free_parameters(fitted_params)
+            n_eff = _effective_sample_size(data)
+            aic = 2 * k - 2 * ll_hat
+            bic = k * np.log(n_eff) - 2 * ll_hat if n_eff > 0 else None
+            metadata = {
+                "success": True,
+                "message": "No free parameters to optimize",
+                "nfev": 0,
+                "nit": 0,
+            }
+            return ConstraintResult(
+                model=self.model,
+                parameters=fitted_params,
+                method="MLE",
+                log_likelihood=ll_hat,
+                aic=aic,
+                bic=bic,
+                metadata=metadata,
+            )
+
+        if minimize_method is None:
+            minimize_method = "L-BFGS-B"
+
+        if user_bounds is not None:
+            bounds = user_bounds
+        else:
+            lower = 0.0
+            upper = 1.0 if not self.model.allow_facilitation else None
+            bounds = [(lower, upper) for _ in range(theta0.size)]
+
+        if bounds is not None and len(bounds) != theta0.size:
+            raise ValueError(
+                f"Bounds length {len(bounds)} does not match parameter vector length {theta0.size}"
+            )
+
+        eval_cache: Dict[str, Any] = {}
+
+        def objective(vector: np.ndarray) -> float:
+            params = _vector_to_params(vector)
+            ll = float(self.log_likelihood(data, params))
+            eval_cache["last_params"] = params
+            eval_cache["last_ll"] = ll
+            if not np.isfinite(ll):
+                return np.inf
+            return -ll
+
+        result = optimize.minimize(
+            objective,
+            theta0,
+            method=minimize_method,
+            bounds=bounds,
+            options=options,
+            **minimize_kwargs,
         )
-        
-        # The remainder of the MLE path will be implemented once the optimizer
-        # contract is finalized. For now the explicit NotImplemented above will
-        # halt execution before reaching this block.
+
+        best_vector = np.array(result.x, dtype=float)
+        fitted_params = _vector_to_params(best_vector)
+        ll_hat = float(-result.fun) if result.fun is not None else float(eval_cache.get("last_ll", float("-inf")))
+        k = self.model.num_free_parameters(fitted_params)
+        n_eff = _effective_sample_size(data)
+        aic = 2 * k - 2 * ll_hat
+        bic = k * np.log(n_eff) - 2 * ll_hat if n_eff > 0 else None
+        metadata = {
+            "success": bool(result.success),
+            "message": result.message,
+            "nfev": getattr(result, "nfev", None),
+            "nit": getattr(result, "nit", None),
+            "fun": result.fun,
+        }
+
+        return ConstraintResult(
+            model=self.model,
+            parameters=fitted_params,
+            method="MLE",
+            log_likelihood=ll_hat,
+            aic=aic,
+            bic=bic,
+            metadata=metadata,
+        )
     
     def test(
         self,

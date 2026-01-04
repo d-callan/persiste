@@ -4,10 +4,28 @@ from typing import Optional, Dict, Any, TYPE_CHECKING
 from dataclasses import dataclass, field
 import numpy as np
 
+EPSILON = 1e-6
+
 if TYPE_CHECKING:
     from persiste.core.states import StateSpace
     from persiste.core.baseline import Baseline
     from persiste.core.transitions import TransitionGraph
+
+
+@dataclass(frozen=True)
+class ParameterSpace:
+    """Structural definition of constraint parameters."""
+    
+    keys: tuple[Any, ...]
+    neutral_value: float = 1.0
+    
+    def size(self) -> int:
+        return len(self.keys)
+    
+    def neutral_vector(self) -> np.ndarray:
+        if not self.keys:
+            return np.array([])
+        return np.full(len(self.keys), self.neutral_value)
 
 
 @dataclass
@@ -182,25 +200,51 @@ class ConstraintModel:
         elif self.constraint_structure == "sparse":
             # ε ~ 1e-6: small but non-zero
             # Avoids numerical issues, allows gradient flow
-            ε = 1e-6
-            return θ.get((i, j), ε)
+            return θ.get((i, j), EPSILON)
         
         else:
             raise ValueError(f"Unknown constraint structure: {self.constraint_structure}")
     
-    def _get_transition_keys(self, params: Optional[Dict[str, Any]] = None) -> list[tuple[int, int]]:
+    def get_parameter_space(
+        self,
+        parameters: Optional[Dict[str, Any]] = None,
+    ) -> ParameterSpace:
         """
-        Determine ordered transition keys for packing/unpacking parameters.
+        Describe the structural parameter layout without mutating model state.
         
-        Falls back to graph topology when parameters are unset so we can still
-        build neutral vectors for inference initialization.
+        Returns:
+            ParameterSpace capturing canonical ordering and neutral defaults.
         """
-        source_params = params if params is not None else self.parameters
-        theta = source_params.get("theta", {})
-        if theta:
-            return sorted(theta.keys())
-        # Use graph topology as canonical ordering
-        return sorted(self.graph.iter_edges())
+        params = parameters if parameters is not None else self.parameters
+        theta = params.get("theta", {})
+        
+        if self.constraint_structure == "per_transition":
+            if theta:
+                keys = tuple(sorted(theta.keys()))
+            else:
+                keys = tuple(sorted(self.graph.iter_edges()))
+            return ParameterSpace(keys=keys, neutral_value=1.0)
+        
+        if self.constraint_structure == "per_state":
+            if theta:
+                keys = tuple(sorted(theta.keys()))
+            else:
+                keys = tuple(range(len(self.states)))
+            return ParameterSpace(keys=keys, neutral_value=1.0)
+        
+        if self.constraint_structure in {"hierarchical", "sparse"}:
+            if self.constraint_structure == "hierarchical":
+                groups = params.get("groups", {})
+                group_names = tuple(sorted(set(groups.values())))
+                transition_keys = tuple(sorted(k for k in theta.keys() if isinstance(k, tuple)))
+                keys = group_names + transition_keys
+                return ParameterSpace(keys=keys, neutral_value=1.0)
+            
+            # sparse
+            keys = tuple(sorted(theta.keys()))
+            return ParameterSpace(keys=keys, neutral_value=EPSILON)
+        
+        return ParameterSpace(keys=tuple())
     
     def num_free_parameters(self, parameters: Optional[Dict[str, Any]] = None) -> int:
         """
@@ -215,30 +259,8 @@ class ConstraintModel:
             Number of free parameters
         """
         params = parameters if parameters is not None else self.parameters
-        θ = params.get("theta", {})
-        
-        if self.constraint_structure == "per_transition":
-            # Each transition has its own θ
-            return len(self._get_transition_keys(params))
-        
-        elif self.constraint_structure == "per_state":
-            # Each state has its own θ
-            return len(θ)
-        
-        elif self.constraint_structure == "hierarchical":
-            # Count group-level + transition-specific parameters
-            groups = params.get("groups", {})
-            group_names = set(groups.values())
-            transition_specific = len([k for k in θ.keys() if isinstance(k, tuple)])
-            return len(group_names) + transition_specific
-        
-        elif self.constraint_structure == "sparse":
-            # Binary indicators: count non-zero entries
-            # (In practice, would count latent indicators in full model)
-            return len([v for v in θ.values() if v > 0])
-        
-        else:
-            raise ValueError(f"Unknown constraint structure: {self.constraint_structure}")
+        space = self.get_parameter_space(params)
+        return space.size()
     
     def set_parameters(self, **params) -> None:
         """
@@ -266,15 +288,12 @@ class ConstraintModel:
         θ = params.get("theta", {})
         
         if self.constraint_structure == "per_transition":
-            # Pack transition-specific parameters
-            keys = self._get_transition_keys(params)
-            return np.array([θ.get(k, 1.0) for k in keys])
+            space = self.get_parameter_space(params)
+            return np.array([θ.get(k, space.neutral_value) for k in space.keys])
         
         elif self.constraint_structure == "per_state":
-            # Pack state-specific parameters
-            # Order: sorted by state index
-            keys = sorted(θ.keys())
-            return np.array([θ[k] for k in keys])
+            space = self.get_parameter_space(params)
+            return np.array([θ.get(k, space.neutral_value) for k in space.keys])
         
         elif self.constraint_structure == "hierarchical":
             # Pack group-level + transition-specific parameters
@@ -315,62 +334,46 @@ class ConstraintModel:
         θ = {}
         
         if self.constraint_structure == "per_transition":
-            # Unpack transition-specific parameters
-            keys = self._get_transition_keys()
+            space = self.get_parameter_space()
             
-            if len(vector) != len(keys):
-                raise ValueError(f"Vector length {len(vector)} != expected {len(keys)}")
+            if len(vector) != space.size():
+                raise ValueError(f"Vector length {len(vector)} != expected {space.size()}")
             
-            for i, k in enumerate(keys):
+            for i, k in enumerate(space.keys):
                 θ[k] = float(vector[i])
             
             return {"theta": θ}
         
         elif self.constraint_structure == "per_state":
-            # Unpack state-specific parameters
-            current_θ = self.parameters.get("theta", {})
-            keys = sorted(current_θ.keys())
+            space = self.get_parameter_space()
             
-            if len(vector) != len(keys):
-                raise ValueError(f"Vector length {len(vector)} != expected {len(keys)}")
+            if len(vector) != space.size():
+                raise ValueError(f"Vector length {len(vector)} != expected {space.size()}")
             
-            for i, k in enumerate(keys):
+            for i, k in enumerate(space.keys):
                 θ[k] = float(vector[i])
             
             return {"theta": θ}
         
         elif self.constraint_structure == "hierarchical":
-            # Unpack group-level + transition-specific
-            current_θ = self.parameters.get("theta", {})
+            space = self.get_parameter_space()
             groups = self.parameters.get("groups", {})
-            group_names = sorted(set(groups.values()))
-            transition_keys = sorted([k for k in current_θ.keys() if isinstance(k, tuple)])
             
-            expected_len = len(group_names) + len(transition_keys)
-            if len(vector) != expected_len:
-                raise ValueError(f"Vector length {len(vector)} != expected {expected_len}")
+            if len(vector) != space.size():
+                raise ValueError(f"Vector length {len(vector)} != expected {space.size()}")
             
-            idx = 0
-            # Group-level parameters
-            for g in group_names:
-                θ[g] = float(vector[idx])
-                idx += 1
-            # Transition-specific overrides
-            for k in transition_keys:
-                θ[k] = float(vector[idx])
-                idx += 1
+            for i, k in enumerate(space.keys):
+                θ[k] = float(vector[i])
             
             return {"theta": θ, "groups": groups}
         
         elif self.constraint_structure == "sparse":
-            # Unpack binary indicators
-            current_θ = self.parameters.get("theta", {})
-            keys = sorted(current_θ.keys())
+            space = self.get_parameter_space()
             
-            if len(vector) != len(keys):
-                raise ValueError(f"Vector length {len(vector)} != expected {len(keys)}")
+            if len(vector) != space.size():
+                raise ValueError(f"Vector length {len(vector)} != expected {space.size()}")
             
-            for i, k in enumerate(keys):
+            for i, k in enumerate(space.keys):
                 θ[k] = float(vector[i])
             
             return {"theta": θ}
@@ -392,10 +395,8 @@ class ConstraintModel:
             return self.pack()
         
         # Default: neutral (θ = 1.0 for all parameters)
-        n_params = self.num_free_parameters()
-        if n_params == 0:
-            return np.array([])
-        return np.ones(n_params)
+        space = self.get_parameter_space()
+        return space.neutral_vector()
     
     def get_constrained_baseline(self, parameters: Optional[Dict[str, Any]] = None) -> "Baseline":
         """

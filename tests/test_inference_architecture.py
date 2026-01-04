@@ -147,14 +147,12 @@ def test_constraint_model_fit_dispatcher():
         assert "obs_model" in str(e)
         print("  ✓ fit() requires obs_model parameter")
     
-    # fit() should dispatch to ConstraintInference
-    try:
-        result = model.fit(data, obs_model=obs_model)
-        assert False, "Should raise NotImplementedError (inference not implemented)"
-    except NotImplementedError as e:
-        assert "not yet implemented" in str(e)
-        print("  ✓ fit() dispatches to ConstraintInference.fit()")
-        print("  ✓ Thin dispatcher keeps model clean")
+    # fit() should dispatch to ConstraintInference and return ConstraintResult
+    result = model.fit(data, obs_model=obs_model)
+    assert isinstance(result, ConstraintResult)
+    assert result.method == "MLE"
+    print("  ✓ fit() dispatches to ConstraintInference.fit()")
+    print("  ✓ Thin dispatcher keeps model clean")
 
 
 def test_constraint_result_structure():

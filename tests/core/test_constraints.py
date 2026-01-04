@@ -1,6 +1,5 @@
 from unittest.mock import MagicMock
 
-import numpy as np
 import pytest
 
 from persiste.core.baseline import Baseline
@@ -50,6 +49,18 @@ def test_per_state_theta_and_num_parameters(state_graph):
     assert model.num_free_parameters() == 2
 
 
+def test_num_parameters_per_state_without_seed(state_graph):
+    states, graph, baseline = state_graph
+    model = ConstraintModel(
+        states=states,
+        baseline=baseline,
+        graph=graph,
+        constraint_structure="per_state",
+    )
+    # No theta provided → should count one parameter per state
+    assert model.num_free_parameters() == len(states)
+
+
 def test_hierarchical_pack_and_unpack():
     states = StateSpace.from_list(['A', 'B', 'C', 'D'])
     graph = TransitionGraph.complete(states)
@@ -72,6 +83,24 @@ def test_hierarchical_pack_and_unpack():
     assert unpacked["groups"] == model.parameters["groups"]
 
 
+def test_num_parameters_hierarchical_counts_groups_and_overrides():
+    states = StateSpace.from_list(['A', 'B', 'C'])
+    graph = TransitionGraph.complete(states)
+    baseline = Baseline.uniform(rate=1.0)
+    model = ConstraintModel(
+        states=states,
+        baseline=baseline,
+        graph=graph,
+        constraint_structure="hierarchical",
+    )
+    model.set_parameters(
+        groups={(0, 1): "core", (1, 2): "accessory"},
+        theta={'core': 0.9, (1, 2): 1.2},
+    )
+    # Expect two group-level entries ("accessory", "core") + one transition override
+    assert model.num_free_parameters() == 3
+
+
 def test_sparse_structure_defaults_to_small_eps(state_graph):
     states, graph, baseline = state_graph
     model = ConstraintModel(
@@ -85,6 +114,30 @@ def test_sparse_structure_defaults_to_small_eps(state_graph):
     assert model.effective_rate(0, 1) == pytest.approx(2.0)
     # unspecified transitions fall back to epsilon (≈0)
     assert model.effective_rate(1, 0) < 1e-5
+
+
+def test_num_parameters_sparse_matches_active_transitions(state_graph):
+    states, graph, baseline = state_graph
+    model = ConstraintModel(
+        states=states,
+        baseline=baseline,
+        graph=graph,
+        constraint_structure="sparse",
+    )
+    model.set_parameters(theta={(0, 1): 0.2, (2, 0): 0.7})
+    assert model.num_free_parameters() == 2
+
+
+def test_num_parameters_per_transition_uses_graph_when_theta_missing(state_graph):
+    states, graph, baseline = state_graph
+    model = ConstraintModel(
+        states=states,
+        baseline=baseline,
+        graph=graph,
+        constraint_structure="per_transition",
+    )
+    # graph.iter_edges() returns canonical transitions
+    assert model.num_free_parameters() == len(tuple(graph.iter_edges()))
 
 
 def test_get_constrained_baseline_calls_effective_rate(state_graph):
