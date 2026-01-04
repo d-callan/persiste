@@ -1,6 +1,6 @@
 """Observation model abstractions for scoring transitions against baselines."""
 
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING, Tuple, Dict
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import math
@@ -56,6 +56,34 @@ class ObservationModel(ABC):
             Log-likelihood value
         """
         pass
+    
+    def log_likelihood_rate_gradient(
+        self,
+        data: "ObservedTransitions",
+        baseline: "Baseline",
+        graph: "TransitionGraph",
+    ) -> Optional[dict[tuple[int, int], float]]:
+        """
+        Optional gradient hook w.r.t. effective rates λ_ij.
+        
+        Returns mapping {(i, j): dℓ/dλ_ij}. Default implementation
+        returns None, signaling no analytic gradient is available.
+        """
+        return None
+    
+    def log_likelihood_rate_hessian(
+        self,
+        data: "ObservedTransitions",
+        baseline: "Baseline",
+        graph: "TransitionGraph",
+    ) -> Optional[dict[tuple[int, int], float]]:
+        """
+        Optional diagonal Hessian hook w.r.t. effective rates λ_ij.
+        
+        Returns mapping {(i, j): d²ℓ/dλ²_ij}. Default implementation
+        returns None, signaling no analytic Hessian is available.
+        """
+        return None
 
 
 @dataclass
@@ -139,6 +167,52 @@ class PoissonObservationModel(ObservationModel):
             ll += count * math.log(λ) - λ - math.lgamma(count + 1)
         
         return ll
+    
+    def log_likelihood_rate_gradient(
+        self,
+        data: "ObservedTransitions",
+        baseline: "Baseline",
+        graph: "TransitionGraph",
+    ) -> Optional[dict[tuple[int, int], float]]:
+        gradients: dict[tuple[int, int], float] = {}
+        
+        for (i, j), count in data.counts.items():
+            if not graph.allows(i, j):
+                continue
+            
+            λ = baseline.get_rate(i, j)
+            if data.exposure is not None:
+                λ *= data.exposure
+            
+            if λ <= 0:
+                continue
+            
+            gradients[(i, j)] = count / λ - 1.0
+        
+        return gradients
+    
+    def log_likelihood_rate_hessian(
+        self,
+        data: "ObservedTransitions",
+        baseline: "Baseline",
+        graph: "TransitionGraph",
+    ) -> Optional[dict[tuple[int, int], float]]:
+        hessians: dict[tuple[int, int], float] = {}
+        
+        for (i, j), count in data.counts.items():
+            if not graph.allows(i, j):
+                continue
+            
+            λ = baseline.get_rate(i, j)
+            if data.exposure is not None:
+                λ *= data.exposure
+            
+            if λ <= 0:
+                continue
+            
+            hessians[(i, j)] = -count / (λ ** 2)
+        
+        return hessians
 
 
 @dataclass
@@ -175,9 +249,30 @@ class CTMCObservationModel(ObservationModel):
         baseline: "Baseline",
         graph: "TransitionGraph",
     ) -> float:
-        """Compute CTMC log-likelihood."""
-        # TODO: Implement CTMC likelihood
-        raise NotImplementedError("CTMC likelihood not yet implemented")
+        """
+        Compute CTMC log-likelihood treating per-edge transitions as Poisson counts.
+        
+        This mirrors the PoissonObservationModel but requires a CTMC rate source
+        (either the provided rate_matrix or the constrained baseline).
+        """
+        ll = 0.0
+        for (i, j), count in data.counts.items():
+            if not graph.allows(i, j):
+                continue
+            
+            λ = self.rate(i, j) if self.rate_matrix is not None else baseline.get_rate(i, j)
+            
+            if data.exposure is not None:
+                λ *= data.exposure
+            
+            if λ <= 0:
+                if count > 0:
+                    return float("-inf")
+                continue
+            
+            ll += count * math.log(λ) - λ - math.lgamma(count + 1)
+        
+        return ll
 
 
 @dataclass
@@ -218,6 +313,59 @@ class MultinomialObservationModel(ObservationModel):
         baseline: "Baseline",
         graph: "TransitionGraph",
     ) -> float:
-        """Compute multinomial log-likelihood."""
-        # TODO: Implement multinomial likelihood
-        raise NotImplementedError("Multinomial likelihood not yet implemented")
+        """
+        Compute multinomial log-likelihood grouped by source state.
+        
+        For each origin i, counts leaving i are assumed to follow a multinomial
+        distribution with probabilities either supplied or derived from baseline rates.
+        """
+        from collections import defaultdict
+        
+        # Precompute transition probabilities
+        prob_map: dict[tuple[int, int], float] = {}
+        row_prob_sums: defaultdict[int, float] = defaultdict(float)
+        
+        if self.probabilities is not None:
+            for (i, j), count in data.counts.items():
+                if not graph.allows(i, j):
+                    continue
+                p = float(self.probabilities[i, j])
+                prob_map[(i, j)] = p
+        else:
+            row_rate_sums: defaultdict[int, float] = defaultdict(float)
+            rate_map: dict[tuple[int, int], float] = {}
+            for (i, j), _ in data.counts.items():
+                if not graph.allows(i, j):
+                    continue
+                rate = baseline.get_rate(i, j)
+                rate_map[(i, j)] = rate
+                row_rate_sums[i] += rate
+            for (i, j), rate in rate_map.items():
+                row_sum = row_rate_sums[i]
+                if row_sum <= 0.0:
+                    prob_map[(i, j)] = 0.0
+                else:
+                    prob_map[(i, j)] = rate / row_sum
+        
+        # Accumulate log-likelihood per source row
+        row_counts: defaultdict[int, float] = defaultdict(float)
+        ll = 0.0
+        
+        for (i, j), count in data.counts.items():
+            if not graph.allows(i, j):
+                continue
+            p = prob_map.get((i, j), 0.0)
+            row_counts[i] += count
+            if p <= 0.0:
+                if count > 0:
+                    return float("-inf")
+                continue
+            ll += count * math.log(p)
+        
+        for i, total in row_counts.items():
+            ll += math.lgamma(total + 1)
+            for (src, dst), count in data.counts.items():
+                if src == i and graph.allows(src, dst):
+                    ll -= math.lgamma(count + 1)
+        
+        return ll
