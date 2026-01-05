@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from persiste.core.data import ObservedTransitions
 from persiste.core.trees import build_star_tree
 from persiste.plugins.copynumber.baselines.cn_baseline import (
     GlobalBaseline,
@@ -16,6 +17,7 @@ from persiste.plugins.copynumber.constraints.cn_constraints import (
 )
 from persiste.plugins.copynumber.data.cn_data import CopyNumberData
 from persiste.plugins.copynumber.observation.cn_observation import (
+    CopyNumberObservationModel,
     DeterministicBinObservation,
     create_observation_model,
 )
@@ -173,6 +175,31 @@ class TestComputeFamilyLikelihood:
         ll = compute_family_likelihood(family_data, tree, Q, obs_model)
         assert np.isfinite(ll)
         assert ll <= 0
+
+
+class TestObservationModelAdapter:
+    def test_copy_number_observation_model_smoke(self):
+        tree = build_star_tree(['tax1', 'tax2'], branch_length=0.1)
+        observed = np.array([[0, 1], [1, 2]], dtype=int)
+        baseline = create_baseline(
+            'global',
+            gain_rate=0.2,
+            loss_rate=0.3,
+            amplify_rate=0.1,
+            contract_rate=0.05,
+        )
+        obs_adapter = CopyNumberObservationModel(
+            graph=None,
+            tree=tree,
+            observed_matrix=observed,
+            obs_model=DeterministicBinObservation(),
+        )
+        transitions = ObservedTransitions(counts={})
+        total_ll = obs_adapter.log_likelihood(transitions, baseline, graph=None)
+        per_family = obs_adapter.last_per_family_log_likelihoods
+        assert np.isfinite(total_ll)
+        assert per_family.shape == (observed.shape[1],)
+        assert np.all(np.isfinite(per_family))
 
 
 class TestLikelihoodRatio:

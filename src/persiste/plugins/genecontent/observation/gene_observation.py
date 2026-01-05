@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Observation model for gene content evolution.
 
@@ -15,12 +17,26 @@ Later extensions:
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any, Optional
 
 import numpy as np
 
-from persiste.core.tip_observations import OneHotTipObservation
+from persiste.core.observation_models import ObservationModel
+from persiste.core.pruning import (
+    ArrayTipConditionalProvider,
+    FelsensteinPruning,
+    SimpleBinaryTransitionProvider,
+)
 
+try:
+    from persiste.core.pruning_rust import compute_likelihoods_batch, check_rust_available
+
+    RUST_AVAILABLE = check_rust_available()
+except ImportError:
+    compute_likelihoods_batch = None
+    RUST_AVAILABLE = False
+
+from ..baselines.gene_baseline import GeneContentBaseline
 from ..states.gene_state import GeneFamilyVector
 
 
@@ -37,9 +53,9 @@ class TipObservations:
         taxon_ids: List of all taxon IDs (row order)
     """
 
-    observations: Dict[str, GeneFamilyVector] = field(default_factory=dict)
-    family_ids: List[str] = field(default_factory=list)
-    taxon_ids: List[str] = field(default_factory=list)
+    observations: dict[str, GeneFamilyVector] = field(default_factory=dict)
+    family_ids: list[str] = field(default_factory=list)
+    taxon_ids: list[str] = field(default_factory=list)
 
     @property
     def n_taxa(self) -> int:
@@ -82,8 +98,8 @@ class TipObservations:
 
     @classmethod
     def from_matrix(
-        cls, matrix: np.ndarray, taxon_ids: List[str], family_ids: List[str]
-    ) -> "TipObservations":
+        cls, matrix: np.ndarray, taxon_ids: list[str], family_ids: list[str]
+    ) -> TipObservations:
         """
         Create from numpy matrix.
 
@@ -144,105 +160,113 @@ class TipObservations:
         return f"TipObservations({self.n_taxa} taxa, {self.n_families} families)"
 
 
-class GeneContentObservation:
+class GeneContentObservationModel(ObservationModel):
     """
-    Observation model for gene content likelihood computation.
-
-    For v1, this is simple: observed states at tips are exact.
-    The likelihood is computed via Felsenstein pruning on the tree.
-
-    Later extensions:
-    - Detection probability (some genes may be missed)
-    - Missingness model (some taxa may have incomplete data)
+    ObservationModel adapter that scores gene content presence/absence on a tree.
+    
+    This bridges the plugin's tree-based likelihood code with the core ConstraintInference
+    pipeline by exposing the standard log_likelihood(data, baseline, graph) signature.
     """
 
     def __init__(
         self,
+        graph: Optional[Any],
+        tree: Any,
         tip_observations: TipObservations,
-        detection_prob: float = 1.0,
+        use_rust: bool = True,
+        use_jax: bool = False,
     ):
-        """
-        Initialize observation model.
-
-        Args:
-            tip_observations: Observed gene presence/absence at tips
-            detection_prob: Probability of detecting a present gene (v1: always 1.0)
-        """
+        self.graph = graph
+        self.tree = tree
         self.tip_observations = tip_observations
-        self.detection_prob = detection_prob
-        self._tip_model = OneHotTipObservation(2)
+        self.use_rust = use_rust and RUST_AVAILABLE and compute_likelihoods_batch is not None
+        self.use_jax = use_jax
+        self._pruning: Optional[FelsensteinPruning] = None
+        self._presence_matrix: Optional[np.ndarray] = None
 
-    @property
-    def family_ids(self) -> List[str]:
-        """Gene family IDs."""
-        return self.tip_observations.family_ids
-
-    @property
-    def taxon_ids(self) -> List[str]:
-        """Taxon IDs."""
-        return self.tip_observations.taxon_ids
-
-    def get_tip_state(self, taxon_id: str, family_id: str) -> int:
+    def rate(self, i: int, j: int) -> float:
         """
-        Get observed state at a tip.
+        Gene content likelihoods are computed across tree branches rather than
+        per-graph transitions, so this interface is unused.
+        """
+        return 0.0
 
+    def _ensure_pruning(self) -> FelsensteinPruning:
+        if self._pruning is None:
+            self._pruning = FelsensteinPruning(
+                self.tree,
+                n_states=2,
+                use_jax=self.use_jax,
+            )
+        return self._pruning
+
+    def _presence(self) -> np.ndarray:
+        if self._presence_matrix is None:
+            self._presence_matrix = self.tip_observations.to_matrix()
+        return self._presence_matrix
+
+    def log_likelihood(
+        self,
+        data: Optional[Any],
+        baseline: GeneContentBaseline,
+        graph: Optional[Any],
+    ) -> float:
+        """
+        Compute log-likelihood of the observed gene presence/absence matrix.
+        
         Args:
-            taxon_id: Taxon identifier
-            family_id: Gene family identifier
-
-        Returns:
-            1 if present, 0 if absent
+            data: Optional override containing presence_matrix/taxon_names/family_names.
+            baseline: GeneContentBaseline supplying gain/loss rates per family.
+            graph: TransitionGraph (unused for tree-based models).
         """
-        obs = self.tip_observations.get_observation(taxon_id)
-        return 1 if obs.is_present(family_id) else 0
+        if not isinstance(baseline, GeneContentBaseline):
+            raise TypeError("GeneContentObservationModel requires a GeneContentBaseline")
 
-    def get_tip_likelihood(self, taxon_id: str, family_id: str, state: int) -> float:
-        """
-        Compute likelihood of latent state given observation.
+        tip_obs = self.tip_observations
+        presence_matrix = getattr(data, "presence_matrix", None)
+        family_names = getattr(data, "family_names", None)
+        taxon_names = getattr(data, "taxon_names", None)
 
-        For v1 (perfect observation):
-            P(obs | state) = 1 if obs == state, 0 otherwise
+        if presence_matrix is None:
+            presence_matrix = self._presence()
+        if family_names is None:
+            family_names = tip_obs.family_ids
+        if taxon_names is None:
+            taxon_names = tip_obs.taxon_ids
 
-        Args:
-            taxon_id: Taxon identifier
-            family_id: Gene family identifier
-            state: Latent state (0 or 1)
+        total_ll = 0.0
+        if self.use_rust:
+            rates = baseline.get_all_rates(family_names)
+            gain_rates = np.array([rates[fam].gain_rate for fam in family_names])
+            loss_rates = np.array([rates[fam].loss_rate for fam in family_names])
 
-        Returns:
-            Likelihood P(observation | latent state)
-        """
-        observed = self.get_tip_state(taxon_id, family_id)
-
-        if self.detection_prob >= 1.0:
-            return float(self._tip_model.get_tip_likelihood(observed)[state])
+            log_liks = compute_likelihoods_batch(
+                self.tree,
+                presence_matrix,
+                gain_rates,
+                loss_rates,
+                taxon_names,
+                use_rust=True,
+            )
+            total_ll = float(np.sum(log_liks))
         else:
-            # Imperfect detection (future extension)
-            if state == 1:  # Gene is present
-                if observed == 1:
-                    return self.detection_prob
-                else:
-                    return 1.0 - self.detection_prob
-            else:  # Gene is absent
-                if observed == 0:
-                    return 1.0  # Can't observe what's not there
-                else:
-                    return 0.0  # False positive (not modeled in v1)
+            pruning = self._ensure_pruning()
+            for idx, fam in enumerate(family_names):
+                rates = baseline.get_rates(fam)
+                transition_provider = SimpleBinaryTransitionProvider(
+                    gain_rate=rates.gain_rate,
+                    loss_rate=rates.loss_rate,
+                )
+                tip_provider = ArrayTipConditionalProvider(
+                    data=presence_matrix[:, idx : idx + 1],
+                    taxon_names=taxon_names,
+                    n_states=2,
+                )
+                result = pruning.compute_likelihood(
+                    transition_provider=transition_provider,
+                    tip_provider=tip_provider,
+                    n_sites=1,
+                )
+                total_ll += float(result.log_likelihood)
 
-    def get_tip_conditional(self, taxon_id: str, family_id: str) -> np.ndarray:
-        """
-        Get conditional likelihood vector at a tip.
-
-        Returns:
-            Array of length 2: [P(obs | state=0), P(obs | state=1)]
-        """
-        observed = self.get_tip_state(taxon_id, family_id)
-
-        if self.detection_prob >= 1.0:
-            return self._tip_model.get_tip_likelihood(observed)
-
-        return np.array(
-            [
-                self.get_tip_likelihood(taxon_id, family_id, 0),
-                self.get_tip_likelihood(taxon_id, family_id, 1),
-            ]
-        )
+        return total_ll

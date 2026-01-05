@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
+from persiste.core.data import ObservedTransitions
 from persiste.core.tree_utils import (
     prepare_tree_from_binary_matrix,
     validate_tree_with_binary_matrix,
@@ -28,6 +29,7 @@ from persiste.plugins.copynumber.constraints.cn_constraints import (
     CopyNumberConstraint,
 )
 from persiste.plugins.copynumber.observation.cn_observation import (
+    CopyNumberObservationModel,
     create_observation_model,
     DeterministicBinObservation,
 )
@@ -36,6 +38,35 @@ from persiste.plugins.copynumber.data.cn_data import (
     CopyNumberResult,
 )
 from persiste.plugins.copynumber.data.loaders import load_cn_matrix
+
+
+class _ConstrainedBaselineAdapter:
+    """
+    Lightweight adapter that applies optional constraints before returning rate matrices.
+    """
+
+    def __init__(
+        self,
+        baseline: CopyNumberBaseline,
+        constraint: CopyNumberConstraint | None = None,
+        theta: float | None = None,
+    ) -> None:
+        self._baseline = baseline
+        self._constraint = constraint if theta is not None else None
+        self._theta = theta
+        self._allowed = get_sparse_transition_graph()
+
+    def build_rate_matrix(self, family_idx: int | None = None) -> np.ndarray:
+        rate_matrix = self._baseline.build_rate_matrix(family_idx=family_idx)
+        if self._constraint is not None and self._theta is not None:
+            rate_matrix = apply_constraint(
+                rate_matrix,
+                self._constraint,
+                self._theta,
+                family_idx=family_idx,
+            )
+        validate_transition_matrix(rate_matrix, self._allowed)
+        return rate_matrix
 
 
 def compute_family_likelihood(
@@ -235,42 +266,33 @@ def fit(
             if theta is not None:
                 print(f"  θ = {theta}")
     
-    # Create observation model
-    obs_model = create_observation_model(obs_model_type)
+    # Build constrained baseline view (applies constraint when theta provided)
+    constrained_baseline = _ConstrainedBaselineAdapter(
+        baseline=baseline,
+        constraint=constraint,
+        theta=theta,
+    )
+    
+    # Create tip observation helper and tree observation adapter
+    tip_obs_model = create_observation_model(obs_model_type)
+    obs_adapter = CopyNumberObservationModel(
+        graph=None,
+        tree=tree_obj,
+        observed_matrix=cn_matrix.T,
+        obs_model=tip_obs_model,
+    )
     
     if verbose:
         print(f"\nObservation model: {obs_model_type}")
         print("\nComputing likelihoods...")
     
-    # Compute per-family likelihoods
-    per_family_lls = np.zeros(data.n_families)
-    
-    for fam_idx in range(data.n_families):
-        # Get baseline rate matrix for this family
-        Q_baseline = baseline.build_rate_matrix(family_idx=fam_idx)
-        
-        # Apply constraint if specified
-        if constraint is not None and theta is not None:
-            Q = apply_constraint(Q_baseline, constraint, theta, family_idx=fam_idx)
-        else:
-            Q = Q_baseline
-        
-        # Validate rate matrix
-        allowed = get_sparse_transition_graph()
-        validate_transition_matrix(Q, allowed)
-        
-        # Get family data
-        family_data = data.get_family_data(fam_idx)
-        
-        # Compute likelihood
-        ll = compute_family_likelihood(family_data, tree_obj, Q, obs_model)
-        per_family_lls[fam_idx] = ll
-        
-        if verbose and (fam_idx + 1) % 100 == 0:
-            print(f"  Processed {fam_idx + 1}/{data.n_families} families...")
-    
-    # Total log-likelihood
-    total_ll = per_family_lls.sum()
+    transitions = ObservedTransitions(counts={})
+    total_ll = obs_adapter.log_likelihood(
+        data=transitions,
+        baseline=constrained_baseline,
+        graph=None,
+    )
+    per_family_lls = obs_adapter.last_per_family_log_likelihoods
     
     if verbose:
         print(f"\nTotal log-likelihood: {total_ll:.2f}")

@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from persiste.plugins.genecontent.observation.gene_observation import (
-    GeneContentObservation,
+    GeneContentObservationModel,
     TipObservations,
 )
 from persiste.plugins.genecontent.states.gene_state import GeneFamilyVector
@@ -38,11 +38,9 @@ def test_tip_observations_summary_calculates_counts():
     assert summary["mean_taxa_per_gene"] == pytest.approx(1.0)
 
 
-def test_gene_content_observation_perfect_detection():
+def test_gene_content_observation_model_runs_numpy():
     tips = make_tip_observations()
-    obs = GeneContentObservation(tips)
-    assert obs.get_tip_state("A", "og1") == 1
-    assert obs.get_tip_state("B", "og1") == 0
-    assert obs.get_tip_likelihood("A", "og1", 1) == 1.0
-    assert obs.get_tip_likelihood("A", "og1", 0) == 0.0
-    np.testing.assert_array_equal(obs.get_tip_conditional("B", "og1"), np.array([1.0, 0.0]))
+    fake_tree = None
+    model = GeneContentObservationModel(graph=None, tree=fake_tree, tip_observations=tips, use_rust=False)
+    # smoke test for presence matrix cache
+    assert model._presence().shape == (tips.n_taxa, tips.n_families)

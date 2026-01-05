@@ -169,7 +169,7 @@ Y[taxon, gene] ∈ {0,1}
 ### Implementation
 
 - `TipObservations`: Data structure for tip states
-- `GeneContentObservation`: Likelihood computation at tips
+- `GeneContentObservationModel`: Core ObservationModel adapter that plugs tip data into tree likelihoods
 
 ---
 

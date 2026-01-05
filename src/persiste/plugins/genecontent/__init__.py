@@ -12,7 +12,7 @@ Scientific question (v1):
 from .states.gene_state import GenePresenceState, GeneFamilyVector
 from .baselines.gene_baseline import GeneContentBaseline
 from .constraints.gene_constraint import GeneContentConstraint
-from .observation.gene_observation import GeneContentObservation
+from .observation.gene_observation import GeneContentObservationModel, TipObservations
 from .data.loaders import load_gene_matrix, load_tree, load_metadata
 from .inference.gene_inference import (
     GeneContentData,
@@ -25,7 +25,7 @@ __all__ = [
     'GeneFamilyVector',
     'GeneContentBaseline',
     'GeneContentConstraint',
-    'GeneContentObservation',
+    'GeneContentObservationModel',
     'load_gene_matrix',
     'load_tree',
     'load_metadata',

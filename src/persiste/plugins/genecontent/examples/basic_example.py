@@ -32,9 +32,11 @@ from persiste.plugins.genecontent.constraints.gene_constraint import (
     PerFamilyConstraint,
 )
 from persiste.plugins.genecontent.observation.gene_observation import (
+    GeneContentObservationModel,
     TipObservations,
-    GeneContentObservation,
 )
+from persiste.core.trees import build_star_tree
+from persiste.plugins.genecontent.baselines.gene_baseline import GlobalRates
 
 
 def demo_state_model():
@@ -187,13 +189,24 @@ def demo_observation_model():
         count = tips.get_family_count(fam)
         print(f"  {fam}: {count}/{tips.n_taxa} taxa")
     
-    # Observation model
-    obs_model = GeneContentObservation(tips)
+    # Build a simple tree and baseline to drive the ObservationModel adapter
+    tree = build_star_tree(taxon_ids, branch_length=0.1)
+    baseline = GlobalRates(gain_rate=0.2, loss_rate=0.3)
     
-    print(f"\nTip conditional likelihoods (SpeciesA, OG0001):")
-    cond = obs_model.get_tip_conditional('SpeciesA', 'OG0001')
-    print(f"  P(obs=1 | state=0) = {cond[0]:.2f}")
-    print(f"  P(obs=1 | state=1) = {cond[1]:.2f}")
+    obs_model = GeneContentObservationModel(
+        graph=None,
+        tree=tree,
+        tip_observations=tips,
+        use_rust=False,
+    )
+    
+    ll = obs_model.log_likelihood(
+        data=None,
+        baseline=baseline,
+        graph=None,
+    )
+    
+    print(f"\nObservation model log-likelihood (global baseline): {ll:.3f}")
 
 
 def demo_effective_rates():

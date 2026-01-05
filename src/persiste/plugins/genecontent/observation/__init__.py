@@ -1,5 +1,5 @@
 """Observation models for gene content evolution."""
 
-from .gene_observation import GeneContentObservation, TipObservations
+from .gene_observation import GeneContentObservationModel, TipObservations
 
-__all__ = ['GeneContentObservation', 'TipObservations']
+__all__ = ['GeneContentObservationModel', 'TipObservations']
