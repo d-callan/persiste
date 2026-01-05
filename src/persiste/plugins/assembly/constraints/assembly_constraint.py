@@ -66,6 +66,8 @@ class AssemblyConstraint(MultiplicativeConstraint):
         self.feature_extractor = (
             feature_extractor if feature_extractor is not None else AssemblyFeatureExtractor()
         )
+        # Assembly constraints never allow facilitation (rates remain non-negative).
+        self.allow_facilitation = False
 
     def constraint_contribution(
         self,

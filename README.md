@@ -10,14 +10,10 @@ PERSISTE detects constraint by comparing observed transition rates against a bas
 
 **Current status:** this repository is primarily an exploration of the underlying framework ideas. The plugins should be treated as research prototypes, not robust scientific software.
 
-- **Phylogenetics** (`persiste-phylo`): FEL-like selection analysis as a **non-rigorous proof-of-concept** that the reframed framework can reproduce HyPhy-adjacent workflows. It is **not** intended to be a drop-in replacement for HyPhy.
+- **Phylogenetics** (`persiste-phylo`): FEL-like selection analysis as a **non-rigorous proof-of-concept** that the reframed framework can reproduce HyPhy-adjacent workflows. It is **not** intended to be a replacement for HyPhy.
 - **Assembly Theory** (`persiste-assembly`): an exploratory sandbox driven by curiosity about assembly theory, and an example of framework flexibility.
-
-- **Gene content** (`persiste-genecontent`): Pangenome gain/loss dynamics with strain heterogeneity framework. **Production-ready** for research use.
-
-Coming soon (exploratory):
-
-- **Copy number**: copy number dynamics
+- **Gene content** (`persiste-genecontent`): Pangenome gain/loss dynamics with strain heterogeneity framework.
+- **Copy number**: (`persiste-copynumber`):copy number dynamics
 
 ## What this project is (and isn’t)
 
@@ -107,7 +103,52 @@ lrt = model.test(
 print(f"p-value: {lrt.pvalue}")
 ```
 
-## GeneContent Plugin - Production Ready
+## Phylo Plugin – Proof-of-Concept Interface
+
+The phylo plugin now mirrors the assembly interface pattern: you provide a tree and codon alignment, and the shared `ConstraintInference` engine fits the global ω (dN/dS) parameter via the MG94 baseline and the `PhyloCTMCObservationModel`.
+
+```python
+from persiste.core.trees import TreeStructure
+from persiste.plugins.phylo import (
+    CodonStateSpace,
+    PhyloModelConfig,
+    fit_global_omega,
+    sequences_to_codon_alignment,
+)
+
+# 1) Prepare inputs
+tree = TreeStructure.from_newick("((A:0.1,B:0.1):0.2,(C:0.1,D:0.1):0.2);")
+codon_space = CodonStateSpace.universal()
+sequences = {
+    "A": "ATGATGATG",
+    "B": "ATGTTTATG",
+    "C": "ATGATGTTT",
+    "D": "ATGTTTTTT",
+}
+alignment, taxa = sequences_to_codon_alignment(sequences, codon_space, tree.tip_names)
+
+# 2) Fit the global ω constraint using shared inference APIs
+result = fit_global_omega(
+    tree=tree,
+    alignment=alignment,
+    config=PhyloModelConfig(initial_omega=1.0, kappa=2.0),
+    inference_kwargs={"options": {"maxiter": 25}},
+)
+
+print("ω̂ =", result.parameters["omega"])
+print("log-likelihood =", result.log_likelihood)
+```
+
+Key helper functions exposed through `persiste.plugins.phylo`:
+
+1. `sequences_to_codon_alignment` – convert FASTA-like mappings into codon index matrices with explicit taxon ordering.
+2. `load_codon_alignment` – read codon FASTA files and convert them to alignments in one step.
+3. `build_phylo_components` – construct the codon space, MG94 baseline, transition graph, and `PhyloCTMCObservationModel`.
+4. `fit_global_omega` – configure the MG94 + OmegaConstraint + PhyloCTMC pipeline and dispatch to `ConstraintInference`.
+
+These helpers keep the proof-of-concept focused while ensuring the phylo workflow exercises the same APIs that other plugins rely on.
+
+## GeneContent Plugin
 
 The **GeneContent plugin** provides phylogenetic analysis of pangenome gain/loss dynamics with a novel strain heterogeneity framework.
 

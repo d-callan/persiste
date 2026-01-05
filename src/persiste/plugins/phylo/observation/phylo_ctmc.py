@@ -271,11 +271,12 @@ class PhyloCTMCObservationModel(ObservationModel):
         Returns:
             Total log-likelihood across all sites
         """
-        # For phylo models, use specialized method with ω=1.0 as default
+        # For phylo models, use specialized method with ω inferred from baseline
         # This provides compatibility with the ObservationModel interface
         # while maintaining phylo-specific functionality
+        omega = getattr(baseline, "omega", 1.0)
         if hasattr(self, 'site_log_likelihoods_with_omega'):
-            site_lls = self.site_log_likelihoods_with_omega(1.0, baseline)
+            site_lls = self.site_log_likelihoods_with_omega(omega, baseline)
             return float(np.sum(site_lls * self.site_weights))
         else:
             # Fallback: compute site-by-site

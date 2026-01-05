@@ -28,6 +28,13 @@ from persiste.plugins.phylo.states.genetic_code import GeneticCode
 from persiste.plugins.phylo.states.codons import CodonStateSpace
 from persiste.plugins.phylo.transitions.codon_graph import CodonTransitionGraph
 from persiste.plugins.phylo.baselines.mg94 import MG94Baseline
+from persiste.plugins.phylo.phylo_interface import (
+    PhyloModelConfig,
+    build_phylo_components,
+    fit_global_omega,
+    load_codon_alignment,
+    sequences_to_codon_alignment,
+)
 
 # Re-export core tree utilities for convenience
 from persiste.core.trees import TreeStructure, load_tree
@@ -35,9 +42,14 @@ from persiste.core.trees import TreeStructure, load_tree
 __all__ = [
     "PhyloPlugin",
     "GeneticCode",
-    "CodonStateSpace", 
+    "CodonStateSpace",
     "CodonTransitionGraph",
     "MG94Baseline",
     "TreeStructure",
     "load_tree",
+    "PhyloModelConfig",
+    "build_phylo_components",
+    "fit_global_omega",
+    "load_codon_alignment",
+    "sequences_to_codon_alignment",
 ]
