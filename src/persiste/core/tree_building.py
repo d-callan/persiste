@@ -127,34 +127,36 @@ def upgma_tree(distance_matrix: np.ndarray, taxon_names: list[str]) -> TreeStruc
     # Convert scipy tree to Newick format
     scipy_tree = to_tree(linkage_matrix)
     
-    def to_newick(node, parent_dist=0.0):
-        """Convert scipy tree to Newick format."""
+    def to_newick(node, parent_height: float | None = None):
+        """Convert scipy tree to Newick format.
+
+        SciPy's ClusterNode.dist is the linkage distance at which the cluster
+        was formed. For UPGMA (average linkage), the ultrametric height is
+        dist/2, and the branch length from a child to its parent is
+        parent_height - child_height.
+        """
+
+        height = float(node.dist) / 2.0
+        branch_len = None if parent_height is None else max(0.0, parent_height - height)
+
         if node.is_leaf():
-            # Leaf node - use taxon name
             name = taxon_names[node.id]
-            # Quote name to preserve underscores and special characters
-            quoted_name = f"'{name}'" if '_' in name or ' ' in name else name
-            # Branch length is from parent to this node
-            branch_len = max(0.0, node.dist / 2 - parent_dist)
-            return f"{quoted_name}:{branch_len:.6f}"
-        else:
-            # Internal node - recurse to children
-            # Children are at distance node.dist/2 from root
-            left = to_newick(node.left, node.dist / 2)
-            right = to_newick(node.right, node.dist / 2)
-            # This node's branch length (if not root)
-            branch_len = max(0.0, node.dist / 2 - parent_dist) if parent_dist > 0 else 0.0
-            if parent_dist > 0:
-                return f"({left},{right}):{branch_len:.6f}"
-            else:
-                # Root node - no branch length
-                return f"({left},{right})"
+            if branch_len is None:
+                return f"{name}"
+            return f"{name}:{branch_len:.6f}"
+
+        left = to_newick(node.left, height)
+        right = to_newick(node.right, height)
+        inner = f"({left},{right})"
+        if branch_len is None:
+            return inner
+        return f"{inner}:{branch_len:.6f}"
     
     newick = to_newick(scipy_tree) + ";"
     
     # Parse Newick string into TreeStructure
-    tree = TreeStructure.from_newick(newick)
-    
+    tree = TreeStructure.from_newick(newick, backend="simple")
+
     return tree
 
 
@@ -185,7 +187,9 @@ def neighbor_joining_tree(distance_matrix: np.ndarray, taxon_names: list[str]) -
 def infer_tree_from_binary_matrix(
     binary_matrix: np.ndarray,
     taxon_names: list[str],
-    method: Literal["jaccard_upgma", "hamming_upgma", "jaccard_nj"] = "jaccard_upgma"
+    method: Literal["jaccard_upgma", "hamming_upgma", "jaccard_nj"] = "jaccard_upgma",
+    *,
+    verbose: bool = False,
 ) -> Tuple[TreeStructure, TreeInferenceMetadata]:
     """
     Infer phylogenetic tree from binary matrix (PAM, binned CN, etc.).
@@ -222,6 +226,55 @@ def infer_tree_from_binary_matrix(
         identical to true phylogeny. Always inspect metadata.source to know
         if tree was inferred.
     """
+
+    def summarize_distance_matrix(distance_matrix: np.ndarray) -> None:
+        # Report off-diagonal summary (diagonal is always 0)
+        if distance_matrix.size == 0:
+            print("  Distance matrix: empty")
+            return
+
+        triu = np.triu_indices(distance_matrix.shape[0], k=1)
+        vals = distance_matrix[triu]
+        if vals.size == 0:
+            print("  Distance matrix: no off-diagonal entries")
+            return
+
+        finite = vals[np.isfinite(vals)]
+        if finite.size == 0:
+            print("  Distance matrix: all off-diagonal values non-finite")
+            return
+
+        zero_frac = float(np.mean(finite == 0.0))
+        print(
+            "  Distance matrix off-diagonal: "
+            f"min={float(np.min(finite)):.6g}, "
+            f"median={float(np.median(finite)):.6g}, "
+            f"max={float(np.max(finite)):.6g}, "
+            f"zeros={zero_frac:.1%}"
+        )
+
+    def summarize_branch_lengths(tree: TreeStructure) -> None:
+        bl = tree.branch_lengths
+        if bl.size == 0:
+            print("  Branch lengths: empty")
+            return
+
+        finite = bl[np.isfinite(bl)]
+        if finite.size == 0:
+            print("  Branch lengths: all non-finite")
+            return
+
+        zero_frac = float(np.mean(finite == 0.0))
+        positive = finite[finite > 0]
+        min_pos = float(np.min(positive)) if positive.size else float("nan")
+        print(
+            "  Branch lengths: "
+            f"min_pos={min_pos:.6g}, "
+            f"median={float(np.median(finite)):.6g}, "
+            f"max={float(np.max(finite)):.6g}, "
+            f"zeros={zero_frac:.1%}, "
+            f"sum={float(np.sum(finite)):.6g}"
+        )
     n_taxa, n_features = binary_matrix.shape
     
     if len(taxon_names) != n_taxa:
@@ -232,18 +285,24 @@ def infer_tree_from_binary_matrix(
         distance_metric = "jaccard"
         clustering_method = "upgma"
         distance_matrix = jaccard_distance(binary_matrix)
+        if verbose:
+            summarize_distance_matrix(distance_matrix)
         tree = upgma_tree(distance_matrix, taxon_names)
         
     elif method == "hamming_upgma":
         distance_metric = "hamming"
         clustering_method = "upgma"
         distance_matrix = hamming_distance(binary_matrix)
+        if verbose:
+            summarize_distance_matrix(distance_matrix)
         tree = upgma_tree(distance_matrix, taxon_names)
         
     elif method == "jaccard_nj":
         distance_metric = "jaccard"
         clustering_method = "neighbor_joining"
         distance_matrix = jaccard_distance(binary_matrix)
+        if verbose:
+            summarize_distance_matrix(distance_matrix)
         tree = neighbor_joining_tree(distance_matrix, taxon_names)
         
     else:
@@ -258,5 +317,8 @@ def infer_tree_from_binary_matrix(
         n_taxa=n_taxa,
         n_features=n_features
     )
+
+    if verbose:
+        summarize_branch_lengths(tree)
     
     return tree, metadata

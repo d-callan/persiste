@@ -200,6 +200,15 @@ class ConstraintInference:
                 "Currently only 'MLE' is supported."
             )
 
+        if (
+            getattr(self.model, "constraint_structure", None) == "sparse"
+            and getattr(self.model, "sparsity", None) == "latent"
+        ):
+            raise NotImplementedError(
+                "Latent spike-and-slab sparsity not yet implemented. "
+                "Planned: mixture model with z ∈ {0,1} and spike-and-slab priors."
+            )
+
         theta0 = np.array(self.model.initial_parameters(), dtype=float)
         if theta0.ndim == 0:
             theta0 = theta0.reshape(1)

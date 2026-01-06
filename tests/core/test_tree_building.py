@@ -57,6 +57,24 @@ def test_upgma_tree_preserves_taxon_names():
     assert np.all(tree.branch_lengths >= 0.0)
 
 
+def test_upgma_tree_tip_branch_lengths_positive_for_non_degenerate_input():
+    distance_matrix = np.array(
+        [
+            [0.0, 0.2, 0.5],
+            [0.2, 0.0, 0.4],
+            [0.5, 0.4, 0.0],
+        ]
+    )
+    taxon_names = ["A_strain", "B_strain", "C_strain"]
+
+    tree = upgma_tree(distance_matrix, taxon_names)
+
+    tip_branch_lengths = tree.branch_lengths[np.array(tree.tip_indices, dtype=int)]
+    assert np.all(np.isfinite(tip_branch_lengths))
+    assert np.all(tip_branch_lengths > 0.0)
+    assert float(np.sum(tree.branch_lengths)) > 0.0
+
+
 def test_infer_tree_metadata_records_method():
     rng = np.random.default_rng(0)
     binary = rng.integers(0, 2, size=(5, 20))

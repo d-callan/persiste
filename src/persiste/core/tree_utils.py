@@ -75,6 +75,7 @@ def prepare_tree_from_binary_matrix(
             binary_matrix=binary_matrix,
             taxon_names=taxon_names,
             method=tree_method,
+            verbose=verbose,
         )
     elif isinstance(tree, (str, Path)):
         if verbose:

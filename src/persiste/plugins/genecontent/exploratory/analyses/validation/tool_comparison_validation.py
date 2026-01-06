@@ -21,12 +21,13 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent.parent))
+repo_root = Path(__file__).resolve().parents[7]
+sys.path.insert(0, str(repo_root / "src"))
 
 from persiste.core.trees import TreeStructure
 from persiste.core.simulation import simulate_binary_evolution
 from persiste.plugins.genecontent.inference.gene_inference import GeneContentData
-from persiste.plugins.genecontent.analyses.standard_analyses import GeneContentAnalysis
+from persiste.plugins.genecontent.exploratory.analyses.standard_analyses import GeneContentAnalysis
 
 
 @dataclass
@@ -38,28 +39,6 @@ class ComparisonResult:
     message: str
     metrics: Dict
     runtime_seconds: float
-
-
-def tree_to_newick(tree: TreeStructure) -> str:
-    """Convert TreeStructure to Newick format string."""
-    def build_newick(node_idx: int) -> str:
-        node = tree.nodes[node_idx]
-        
-        if node.is_tip:
-            name = node.name or f"tip{node_idx}"
-            return f"{name}:{tree.branch_lengths[node_idx]:.6f}"
-        else:
-            children_str = ",".join(
-                build_newick(child_id) 
-                for child_id in node.children_ids
-            )
-            bl = tree.branch_lengths[node_idx]
-            if node_idx == tree.root_index:
-                return f"({children_str})"
-            else:
-                return f"({children_str}):{bl:.6f}"
-    
-    return build_newick(tree.root_index) + ";"
 
 
 class ExternalToolRunner:
@@ -96,18 +75,21 @@ class ExternalToolRunner:
         try:
             gloome_dir = output_dir / 'gloome_run'
             gloome_dir.mkdir(exist_ok=True, parents=True)
+
+            def quote_taxon(name: str) -> str:
+                return "'" + name.replace("'", "\\'") + "'"
             
             # Create tree file
             tree_path = gloome_dir / 'tree.nwk'
             with open(tree_path, 'w') as f:
-                f.write(tree_to_newick(tree))
+                f.write(tree.to_newick())
                 f.write('\n')
             
             # Create sequence file (FASTA with binary 0/1)
             seq_path = gloome_dir / 'sequences.fa'
             with open(seq_path, 'w') as f:
                 for tip_idx, taxon in enumerate(taxon_names):
-                    f.write(f'>{taxon}\n')
+                    f.write(f'>{quote_taxon(taxon)}\n')
                     sequence = ''.join([str(int(presence_matrix[tip_idx, fam_idx]))
                                        for fam_idx in range(presence_matrix.shape[1])])
                     f.write(sequence + '\n')
@@ -191,7 +173,7 @@ class ExternalToolRunner:
             # Create tree file
             tree_path = badirate_dir / 'tree.nwk'
             with open(tree_path, 'w') as f:
-                f.write(tree_to_newick(tree))
+                f.write(tree.to_newick())
                 f.write('\n')
             
             # Create family file in BadiRate TSV format

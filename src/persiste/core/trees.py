@@ -152,6 +152,15 @@ class TreeStructure:
         nodes = []
         node_counter = [0]
 
+        def normalize_name(raw: str | None) -> str | None:
+            if raw is None:
+                return None
+            name = raw.strip()
+            if len(name) >= 2 and name[0] == "'" and name[-1] == "'":
+                name = name[1:-1]
+                name = name.replace("\\'", "'")
+            return name
+
         def parse_node(s: str, parent_id: int | None = None) -> tuple[int, str]:
             """Parse a node and return (node_id, remaining_string)."""
             s = s.strip()
@@ -211,7 +220,7 @@ class TreeStructure:
                         name_end = j + 1
 
                     if name_end > 0:
-                        node.name = remaining[:name_end].strip()
+                        node.name = normalize_name(remaining[:name_end].strip())
 
                     remaining = remaining[name_end:]
 
@@ -242,7 +251,7 @@ class TreeStructure:
                         end = j
                         break
 
-                name = s[:end].strip() if end > 0 else None
+                name = normalize_name(s[:end].strip() if end > 0 else None)
                 remaining = s[end:]
 
                 # Parse branch length
@@ -337,6 +346,48 @@ class TreeStructure:
     def get_tip_index_map(self) -> dict[str, int]:
         """Map tip names to their indices."""
         return {name: idx for idx, name in zip(self.tip_indices, self.tip_names)}
+
+    def to_newick(
+        self,
+        *,
+        quote_tips: bool = True,
+        escape_single_quotes: bool = True,
+        precision: int = 6,
+        include_internal_names: bool = False,
+        include_root_branch_length: bool = False,
+    ) -> str:
+        nodes_by_id = {n.id: n for n in self.nodes}
+
+        def quote(name: str) -> str:
+            if not quote_tips:
+                return name
+            if escape_single_quotes:
+                name = name.replace("'", "\\'")
+            return "'" + name + "'"
+
+        def fmt_branch_length(x: float) -> str:
+            return f"{float(x):.{precision}f}"
+
+        def render(node_id: int) -> str:
+            node = nodes_by_id[node_id]
+
+            if node.is_tip:
+                label = quote(node.name or "")
+                return f"{label}:{fmt_branch_length(node.branch_length)}"
+
+            children = node.children_ids
+            inner = ",".join(render(child_id) for child_id in children)
+
+            name_part = ""
+            if include_internal_names and node.name:
+                name_part = node.name
+
+            if node_id == self.root_index and not include_root_branch_length:
+                return f"({inner}){name_part}"
+
+            return f"({inner}){name_part}:{fmt_branch_length(node.branch_length)}"
+
+        return render(self.root_index) + ";"
 
     def __repr__(self) -> str:
         return f"TreeStructure({self.n_tips} tips, {self.n_nodes} nodes)"

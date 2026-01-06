@@ -13,11 +13,13 @@ import time
 import subprocess
 import shutil
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+repo_root = Path(__file__).resolve().parents[5]
+sys.path.insert(0, str(repo_root / "src"))
+
+from persiste.core.tree_utils import prepare_tree_from_binary_matrix
+from persiste.core.trees import TreeStructure
 from persiste.plugins.genecontent import pam_interface
-from persiste.plugins.genecontent.tree_inference import infer_tree_from_pam
-from persiste.plugins.genecontent.analyses.validation.tool_comparison_validation import tree_to_newick
 
 
 def run_genecontent(pam, strain_names, gene_names, output_dir: Path):
@@ -33,14 +35,20 @@ def run_genecontent(pam, strain_names, gene_names, output_dir: Path):
     # Infer tree
     print("Inferring tree...")
     tree_start = time.time()
-    tree, metadata = infer_tree_from_pam(pam, strain_names, method="jaccard_upgma")
+    tree, metadata = prepare_tree_from_binary_matrix(
+        binary_matrix=pam,
+        taxon_names=strain_names,
+        tree=None,
+        tree_method="jaccard_upgma",
+        verbose=False,
+    )
     tree_time = time.time() - tree_start
     print(f"  ✓ Tree inferred in {tree_time:.2f}s")
     
     # Save tree
     tree_file = output_dir / "tree.nwk"
     with open(tree_file, 'w') as f:
-        f.write(tree_to_newick(tree))
+        f.write(tree.to_newick())
         f.write('\n')
     print(f"  Saved: {tree_file}")
     
@@ -105,18 +113,25 @@ def run_gloome_with_tree(pam, strain_names, gene_names, tree_file: Path, output_
     
     print(f"\nDataset: {len(strain_names)} strains × {len(gene_names):,} genes")
     
+    def quote_taxon(name: str) -> str:
+        return "'" + name.replace("'", "\\'") + "'"
+
     # Create sequence file
     seq_file = output_dir / 'sequences.fa'
     print(f"Writing sequences...")
     with open(seq_file, 'w') as f:
         for i, taxon in enumerate(strain_names):
-            f.write(f'>{taxon}\n')
+            f.write(f">{quote_taxon(taxon)}\n")
             sequence = ''.join([str(int(pam[i, j])) for j in range(len(gene_names))])
             f.write(sequence + '\n')
     
     # Copy tree
     gloome_tree = output_dir / 'tree.nwk'
-    shutil.copy(tree_file, gloome_tree)
+    with open(tree_file, "r") as f:
+        newick = f.read().strip()
+    with open(gloome_tree, "w") as f:
+        f.write(newick)
+        f.write("\n")
     
     # Create parameter file
     param_file = output_dir / 'params.txt'

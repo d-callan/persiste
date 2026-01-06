@@ -3,7 +3,7 @@
 //! Implements parallel computation of Jaccard and Hamming distances
 //! from presence/absence matrices.
 
-use ndarray::{Array2, ArrayView2};
+use ndarray::{Array2, ArrayView1, ArrayView2};
 use rayon::prelude::*;
 
 /// Compute Jaccard distance between two binary vectors.
@@ -19,7 +19,7 @@ use rayon::prelude::*;
 /// # Returns
 /// Jaccard distance in [0, 1]
 #[inline]
-fn jaccard_distance_pair(a: &[u8], b: &[u8]) -> f64 {
+fn jaccard_distance_pair(a: ArrayView1<u8>, b: ArrayView1<u8>) -> f64 {
     let mut intersection = 0u32;
     let mut union = 0u32;
     
@@ -54,13 +54,14 @@ fn jaccard_distance_pair(a: &[u8], b: &[u8]) -> f64 {
 /// # Returns
 /// Hamming distance in [0, 1]
 #[inline]
-fn hamming_distance_pair(a: &[u8], b: &[u8]) -> f64 {
+fn hamming_distance_pair(a: ArrayView1<u8>, b: ArrayView1<u8>) -> f64 {
     let n = a.len();
     if n == 0 {
         return 0.0;
     }
     
-    let differences: u32 = a.iter()
+    let differences: u32 = a
+        .iter()
         .zip(b.iter())
         .map(|(&ai, &bi)| if ai != bi { 1 } else { 0 })
         .sum();
@@ -93,7 +94,7 @@ pub fn jaccard_distance_matrix(pam: ArrayView2<u8>) -> Array2<f64> {
         .map(|&(i, j)| {
             let row_i = pam.row(i);
             let row_j = pam.row(j);
-            let dist = jaccard_distance_pair(row_i.as_slice().unwrap(), row_j.as_slice().unwrap());
+            let dist = jaccard_distance_pair(row_i, row_j);
             ((i, j), dist)
         })
         .collect();
@@ -128,7 +129,7 @@ pub fn hamming_distance_matrix(pam: ArrayView2<u8>) -> Array2<f64> {
         .map(|&(i, j)| {
             let row_i = pam.row(i);
             let row_j = pam.row(j);
-            let dist = hamming_distance_pair(row_i.as_slice().unwrap(), row_j.as_slice().unwrap());
+            let dist = hamming_distance_pair(row_i, row_j);
             ((i, j), dist)
         })
         .collect();
@@ -149,17 +150,17 @@ mod tests {
     
     #[test]
     fn test_jaccard_identical() {
-        let a = [1u8, 0, 1, 0];
-        let b = [1u8, 0, 1, 0];
-        let dist = jaccard_distance_pair(&a, &b);
+        let a = array![1u8, 0, 1, 0];
+        let b = array![1u8, 0, 1, 0];
+        let dist = jaccard_distance_pair(a.view(), b.view());
         assert_eq!(dist, 0.0);
     }
     
     #[test]
     fn test_jaccard_disjoint() {
-        let a = [1u8, 1, 0, 0];
-        let b = [0u8, 0, 1, 1];
-        let dist = jaccard_distance_pair(&a, &b);
+        let a = array![1u8, 1, 0, 0];
+        let b = array![0u8, 0, 1, 1];
+        let dist = jaccard_distance_pair(a.view(), b.view());
         assert_eq!(dist, 1.0);
     }
     
@@ -168,41 +169,41 @@ mod tests {
         // A = {0, 1}, B = {1, 2}
         // Intersection = {1}, Union = {0, 1, 2}
         // Similarity = 1/3, Distance = 2/3
-        let a = [1u8, 1, 0];
-        let b = [0u8, 1, 1];
-        let dist = jaccard_distance_pair(&a, &b);
+        let a = array![1u8, 1, 0];
+        let b = array![0u8, 1, 1];
+        let dist = jaccard_distance_pair(a.view(), b.view());
         assert!((dist - 2.0/3.0).abs() < 1e-10);
     }
     
     #[test]
     fn test_jaccard_all_zeros() {
-        let a = [0u8, 0, 0, 0];
-        let b = [0u8, 0, 0, 0];
-        let dist = jaccard_distance_pair(&a, &b);
+        let a = array![0u8, 0, 0, 0];
+        let b = array![0u8, 0, 0, 0];
+        let dist = jaccard_distance_pair(a.view(), b.view());
         assert_eq!(dist, 0.0);
     }
     
     #[test]
     fn test_hamming_identical() {
-        let a = [1u8, 0, 1, 0];
-        let b = [1u8, 0, 1, 0];
-        let dist = hamming_distance_pair(&a, &b);
+        let a = array![1u8, 0, 1, 0];
+        let b = array![1u8, 0, 1, 0];
+        let dist = hamming_distance_pair(a.view(), b.view());
         assert_eq!(dist, 0.0);
     }
     
     #[test]
     fn test_hamming_opposite() {
-        let a = [1u8, 1, 1, 1];
-        let b = [0u8, 0, 0, 0];
-        let dist = hamming_distance_pair(&a, &b);
+        let a = array![1u8, 1, 1, 1];
+        let b = array![0u8, 0, 0, 0];
+        let dist = hamming_distance_pair(a.view(), b.view());
         assert_eq!(dist, 1.0);
     }
     
     #[test]
     fn test_hamming_half() {
-        let a = [1u8, 1, 0, 0];
-        let b = [1u8, 1, 1, 1];
-        let dist = hamming_distance_pair(&a, &b);
+        let a = array![1u8, 1, 0, 0];
+        let b = array![1u8, 1, 1, 1];
+        let dist = hamming_distance_pair(a.view(), b.view());
         assert_eq!(dist, 0.5);
     }
     
