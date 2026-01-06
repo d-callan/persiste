@@ -210,13 +210,16 @@ persiste/
 
 ## Development Status
 
-### Production-Ready
+### Beta 
 - **GeneContent plugin** - Pangenome gain/loss analysis with strain heterogeneity framework
+- **Core framework** - General baseline vs. constraint pattern
+
+## Alpha
+- ** CopyNumber plugin** - Copy number dynamics
 
 ### Exploratory / Pre-alpha
 - **Phylo plugin (FEL)** - Lightweight validation that framework can support HyPhy-adjacent workflows
 - **Assembly plugin** - Exploratory implementation for assembly theory
-- **Core framework** - General baseline vs. constraint pattern (evolving)
 
 If you want to use exploratory plugins for serious scientific inference, plan to independently validate results and assumptions.
 
@@ -224,6 +227,3 @@ If you want to use exploratory plugins for serious scientific inference, plan to
 
 MIT (TBD)
 
-## Citation
-
-(TBD)
