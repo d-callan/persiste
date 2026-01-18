@@ -13,7 +13,7 @@ mod assembly;
 use tree::Tree;
 use pruning::felsenstein_pruning;
 use distance::{jaccard_distance_matrix, hamming_distance_matrix};
-use assembly::{AssemblyState, AssemblyBaseline, AssemblyConstraint, SimulationConfig, CacheConfig, CacheManager, CacheStatus, InvalidationReason, TopologyGuard};
+use assembly::{AssemblyState, AssemblyBaseline, AssemblyConstraint, SimulationConfig, ContextClassConfig, FounderBiasConfig, CacheConfig, CacheManager, CacheStatus, InvalidationReason, TopologyGuard};
 
 /// Compute log-likelihoods for all gene families in parallel.
 ///
@@ -127,11 +127,13 @@ fn compute_hamming_distance<'py>(
 /// * `join_exponent` - Join rate exponent
 /// * `split_exponent` - Split rate exponent
 /// * `decay_rate` - Decay rate
+/// * `depth_gate_threshold` - Optional depth threshold for non-stationarity (Symmetry Break A)
+/// * `depth_gate_theta` - Reuse modifier strength when depth >= threshold
 ///
 /// # Returns
 /// * List of dicts, each containing path statistics
 #[pyfunction]
-#[pyo3(signature = (primitives, initial_parts, theta, n_samples, t_max, burn_in, max_depth, seed, kappa=1.0, join_exponent=-0.5, split_exponent=0.3, decay_rate=0.01))]
+#[pyo3(signature = (primitives, initial_parts, theta, n_samples, t_max, burn_in, max_depth, seed, kappa=1.0, join_exponent=-0.5, split_exponent=0.3, decay_rate=0.01, depth_gate_threshold=None, depth_gate_theta=0.0, context_class_config=None, founder_bias_config=None))]
 fn simulate_assembly_trajectories<'py>(
     py: Python<'py>,
     primitives: Vec<String>,
@@ -146,6 +148,10 @@ fn simulate_assembly_trajectories<'py>(
     join_exponent: f64,
     split_exponent: f64,
     decay_rate: f64,
+    depth_gate_threshold: Option<u32>,
+    depth_gate_theta: f64,
+    context_class_config: Option<&PyDict>,
+    founder_bias_config: Option<&PyDict>,
 ) -> PyResult<Vec<PyObject>> {
     // Convert theta from PyDict to HashMap
     let mut theta_map: HashMap<String, f64> = HashMap::new();
@@ -158,12 +164,68 @@ fn simulate_assembly_trajectories<'py>(
     // Build components
     let baseline = AssemblyBaseline::new(kappa, join_exponent, split_exponent, decay_rate);
     let constraint = AssemblyConstraint::new(theta_map.clone());
+    let context_config = match context_class_config {
+        Some(cfg) => {
+            let primitive_classes = match cfg.get_item("primitive_classes")? {
+                Some(item) => item.extract::<HashMap<String, String>>()?,
+                None => HashMap::new(),
+            };
+
+            let same_class_theta = match cfg.get_item("same_class_theta")? {
+                Some(value) => value.extract::<f64>()?,
+                None => 0.0,
+            };
+
+            let cross_class_theta = match cfg.get_item("cross_class_theta")? {
+                Some(value) => value.extract::<f64>()?,
+                None => 0.0,
+            };
+
+            Some(ContextClassConfig {
+                primitive_classes,
+                same_class_theta,
+                cross_class_theta,
+            })
+        }
+        None => None,
+    };
+
+    let founder_config = match founder_bias_config {
+        Some(cfg) => {
+            let founder_rank_threshold = match cfg.get_item("founder_rank_threshold")? {
+                Some(value) => value.extract::<u32>()?,
+                None => 1,
+            };
+
+            let founder_bonus_theta = match cfg.get_item("founder_bonus_theta")? {
+                Some(value) => value.extract::<f64>()?,
+                None => 0.0,
+            };
+
+            let late_penalty_theta = match cfg.get_item("late_penalty_theta")? {
+                Some(value) => value.extract::<f64>()?,
+                None => 0.0,
+            };
+
+            Some(FounderBiasConfig {
+                founder_rank_threshold,
+                founder_bonus_theta,
+                late_penalty_theta,
+            })
+        }
+        None => None,
+    };
+
     let config = SimulationConfig {
         t_max,
         burn_in,
         max_depth,
         min_rate_threshold: 1e-6,
         primitives,
+        depth_gate_threshold,
+        depth_gate_theta,
+        context_class_config: context_config,
+        founder_bias_config: founder_config,
     };
 
     // Create initial state
@@ -196,7 +258,12 @@ fn simulate_assembly_trajectories<'py>(
             dict.set_item("final_state_id", ps.final_state_id).unwrap();
             dict.set_item("duration", ps.duration).unwrap();
             dict.set_item("n_transitions", ps.n_transitions).unwrap();
-            
+            dict.set_item("max_depth_reached", ps.max_depth_reached).unwrap();
+            let reuse_count = *ps.feature_counts.get("reuse_count").unwrap_or(&0);
+            dict.set_item("reuse_count", reuse_count).unwrap();
+            dict.set_item("founder_rank", ps.founder_rank).unwrap();
+            dict.set_item("first_visit_time", ps.first_visit_time).unwrap();
+
             dict.into()
         })
         .collect();

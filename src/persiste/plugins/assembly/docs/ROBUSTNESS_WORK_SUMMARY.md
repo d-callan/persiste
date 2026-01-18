@@ -24,7 +24,7 @@ After initial validation showed assembly constraints were identifiable, we wante
 - `src/persiste/plugins/assembly/baselines/baseline_family.py`
 - `src/persiste/plugins/assembly/inference/constraint_result.py`
 - `src/persiste/plugins/assembly/inference/robust_inference.py`
-- `examples/assembly_robust_example.py`
+- `wip/assembly_robust_example.py`
 - `docs/ASSEMBLY_USER_GUIDE.md`
 - `docs/ASSEMBLY_TECHNICAL.md`
 - `docs/ASSEMBLY_README.md`
@@ -66,8 +66,8 @@ Total:        5-10 minutes
 **Files created:**
 - `src/persiste/plugins/assembly/inference/state_cache.py`
 - `src/persiste/plugins/assembly/inference/robust_inference_v2.py`
-- `examples/test_fast_inference.py`
-- `examples/profile_inference_bottleneck.py`
+- `wip/test_fast_inference.py`
+- `wip/profile_inference_bottleneck.py`
 - `docs/ASSEMBLY_ARCHITECTURE_V2.md`
 - `docs/ASSEMBLY_V2_SUMMARY.md`
 
@@ -173,7 +173,7 @@ delta_ll = ll_true - ll_null  # 9.38 (strong signal)
 
 ### Validated Baseline (Original Approach)
 
-**From:** `examples/assembly_validation_fixed.py`
+**From:** `src/persiste/plugins/assembly/validation/experiments/assembly_validation.py`
 
 ```python
 # 1. Generate data with known parameters
@@ -293,7 +293,7 @@ delta_ll = ll_true - ll_null  # Should be > 2 for identifiable constraints
 ## Current Status
 
 **Working and validated:**
-- ✓ Original validation approach (`assembly_validation_fixed.py`)
+- ✓ Original validation approach (`validation/experiments/assembly_validation.py`)
 - ✓ Direct likelihood evaluation (3s, Δ LL = 9.38)
 - ✓ Constraints are identifiable
 - ✓ No false positives on null data

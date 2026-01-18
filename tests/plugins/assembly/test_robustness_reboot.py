@@ -332,6 +332,78 @@ class TestDiagnostics:
         assert result.confidence_interval[0] <= result.mle <= result.confidence_interval[1]
 
 
+class TestNullCalibration:
+    """V1: Null calibration — ensure ΔLL ≈ 0 when θ = 0."""
+
+    def test_null_delta_ll_deterministic(self):
+        """Deterministic screening should report ΔLL ≈ 0 at θ = 0."""
+        result = fit_assembly_constraints(
+            observed_compounds={"A", "B"},
+            primitives=["A", "B"],
+            mode=InferenceMode.SCREEN_ONLY,
+            screen_budget=5,
+            seed=42,
+        )
+
+        # At null, deterministic ΔLL should be near zero
+        if result["deterministic_delta_ll"] is not None:
+            assert abs(result["deterministic_delta_ll"]) < 0.5, \
+                f"Deterministic ΔLL={result['deterministic_delta_ll']} deviates from null"
+
+    def test_null_delta_ll_stochastic(self):
+        """Stochastic inference should report ΔLL ≈ 0 at θ = 0."""
+        result = fit_assembly_constraints(
+            observed_compounds={"A", "B"},
+            primitives=["A", "B"],
+            mode=InferenceMode.FULL_STOCHASTIC,
+            n_samples=20,
+            seed=42,
+        )
+
+        # At null, stochastic ΔLL should be near zero
+        assert abs(result["stochastic_delta_ll"]) < 1.0, \
+            f"Stochastic ΔLL={result['stochastic_delta_ll']} deviates from null"
+
+    def test_null_delta_ll_screen_and_refine(self):
+        """Screen + refine should report ΔLL ≈ 0 at θ = 0."""
+        result = fit_assembly_constraints(
+            observed_compounds={"A", "B"},
+            primitives=["A", "B"],
+            mode=InferenceMode.SCREEN_AND_REFINE,
+            screen_budget=5,
+            n_samples=20,
+            seed=42,
+        )
+
+        # Both deterministic and stochastic should be near zero
+        if result["deterministic_delta_ll"] is not None:
+            assert abs(result["deterministic_delta_ll"]) < 0.5
+        assert abs(result["stochastic_delta_ll"]) < 1.0
+
+
+class TestDeterministicSanity:
+    """Stage II: Deterministic screen sanity checks."""
+
+    def test_screen_only_null_constraints(self):
+        """Deterministic-only mode should not escalate thresholds on null data."""
+        result = fit_assembly_constraints(
+            observed_compounds={"A", "B"},
+            primitives=["A", "B"],
+            mode=InferenceMode.SCREEN_ONLY,
+            screen_budget=10,
+            seed=42,
+        )
+
+        # Screening results should exist but not auto-accept
+        assert result["screening_results"] is not None
+        # Top result should have low normalized ΔLL (near null)
+        if result["screening_results"]:
+            top_result = result["screening_results"][0]
+            norm_dll = top_result["normalized_delta_ll"]
+            assert norm_dll < 2.0, \
+                f"Top screening result has unexpectedly high normalized ΔLL: {norm_dll}"
+
+
 class TestCLI:
     """Test CLI inference modes."""
 
@@ -359,15 +431,61 @@ class TestCLI:
         assert result["mode"] == "full-stochastic"
         assert "theta_hat" in result
 
+    def test_screen_vs_full_stochastic_consistency(self):
+        """SCREEN_AND_REFINE should match FULL_STOCHASTIC on the same seed."""
 
-class TestValidationCriteria:
-    """Test validation criteria from robustness plan."""
+        common_kwargs = {
+            "observed_compounds": {"A", "B"},
+            "primitives": ["A", "B"],
+            "n_samples": 30,
+            "t_max": 15.0,
+            "burn_in": 5.0,
+            "max_depth": 4,
+            "seed": 314,
+        }
+
+        screened = fit_assembly_constraints(
+            mode=InferenceMode.SCREEN_AND_REFINE,
+            screen_budget=12,
+            screen_topk=3,
+            screen_refine_radius=0.25,
+            **common_kwargs,
+        )
+        full = fit_assembly_constraints(
+            mode=InferenceMode.FULL_STOCHASTIC,
+            **common_kwargs,
+        )
+
+        assert screened["screening_results"], "Screened run should produce candidates"
+        assert screened["cache_stats"] is not None
+        assert full["cache_stats"] is not None
+
+        theta_keys = set(screened["theta_hat"]) | set(full["theta_hat"])
+        for key in theta_keys:
+            assert math.isclose(
+                screened["theta_hat"].get(key, 0.0),
+                full["theta_hat"].get(key, 0.0),
+                abs_tol=1e-6,
+            )
+
+        assert math.isclose(
+            screened["stochastic_ll"],
+            full["stochastic_ll"],
+            rel_tol=1e-6,
+            abs_tol=1e-6,
+        )
+        assert math.isclose(
+            screened["stochastic_delta_ll"],
+            full["stochastic_delta_ll"],
+            rel_tol=1e-6,
+            abs_tol=1e-6,
+        )
 
     @pytest.mark.slow
     def test_convergence_with_nonzero_theta_ref(self):
         """
         Validation: θ̂ should converge when θ_ref ≠ 0.
-        
+
         This tests that inference works correctly even when
         trajectories are cached at a non-null reference point.
         """

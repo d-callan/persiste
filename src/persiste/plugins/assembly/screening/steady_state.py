@@ -12,6 +12,7 @@ from persiste.plugins.assembly.baselines.assembly_baseline import (
     AssemblyBaseline,
     TransitionType,
 )
+from persiste.plugins.assembly.likelihood import compute_observation_ll
 from persiste.plugins.assembly.states.assembly_state import AssemblyState
 
 
@@ -141,12 +142,17 @@ class SteadyStateAssemblyModel:
         theta: dict[str, float],
         observed_compounds: set[str],
         initial_state: AssemblyState,
+        *,
+        observation_records: list[dict] | None = None,
+        max_depth: int | None = None,
+        null_latent_states: dict[int, float] | None = None,
     ) -> float:
         """
         Cheap approximate log-likelihood for screening.
 
         Computes approximate probability of observing the given compounds
-        under the steady-state distribution.
+        under the steady-state distribution. When ``null_latent_states`` are
+        supplied, the returned value is ΔLL relative to that baseline.
 
         Args:
             theta: Feature weights
@@ -154,32 +160,24 @@ class SteadyStateAssemblyModel:
             initial_state: Starting state
 
         Returns:
-            Approximate log-likelihood
+            Approximate log-likelihood (or ΔLL if null_latent_states provided)
         """
         occupancy = self.expected_occupancy(theta, initial_state)
 
         if not occupancy:
             return -math.inf
 
-        # Compute observation probability
-        # Simple model: compound present if any state with that part has nonzero prob
-        log_lik = 0.0
-        states = self._enumerate_states(initial_state)
+        effective_max_depth = max_depth or self.config.max_depth
 
-        for compound in observed_compounds:
-            # Probability that compound is present
-            prob_present = 0.0
-            for state_id, prob in occupancy.items():
-                if state_id in states:
-                    state = states[state_id]
-                    if state.contains_part(compound):
-                        prob_present += prob
-
-            # Clamp to avoid log(0)
-            prob_present = max(prob_present, 1e-10)
-            log_lik += math.log(prob_present)
-
-        return log_lik
+        return compute_observation_ll(
+            occupancy,
+            observed_compounds,
+            self.primitives,
+            observation_records=observation_records,
+            max_depth=effective_max_depth,
+            null_latent_states=null_latent_states,
+            ess_ratio=1.0,
+        )
 
     def _enumerate_states(
         self,

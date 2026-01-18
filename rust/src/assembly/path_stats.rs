@@ -29,6 +29,12 @@ pub struct PathStats {
     pub duration: f64,
     /// Number of transitions in trajectory.
     pub n_transitions: u32,
+    /// Maximum assembly depth reached along the trajectory.
+    pub max_depth_reached: u16,
+    /// First-visit order (rank) for the final state within the trajectory.
+    pub founder_rank: u32,
+    /// Simulation time when the final state was first visited.
+    pub first_visit_time: f64,
 }
 
 impl PathStats {
@@ -40,6 +46,9 @@ impl PathStats {
             log_prob_ref: 0.0,
             duration,
             n_transitions: 0,
+            max_depth_reached: 0,
+            founder_rank: 0,
+            first_visit_time: 0.0,
         }
     }
 

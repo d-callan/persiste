@@ -9,12 +9,10 @@ Features are hypothesis-neutral. Weights are hypotheses.
 Key principle: Features are cheap, local, compositional, interpretable.
 """
 
-from typing import Dict, Set, Optional
 from dataclasses import dataclass
-import numpy as np
 
-from persiste.plugins.assembly.states.assembly_state import AssemblyState
 from persiste.plugins.assembly.baselines.assembly_baseline import TransitionType
+from persiste.plugins.assembly.states.assembly_state import AssemblyState
 
 
 @dataclass
@@ -31,16 +29,22 @@ class TransitionFeatures:
         size_change: Change in number of parts (target - source)
         motif_gained: Set of motifs gained in transition
         motif_lost: Set of motifs lost in transition
-        symmetry_score: Symmetry of target state (0 = asymmetric, 1 = symmetric)
-        diversity_score: Part diversity in target (Shannon entropy)
+        transition_type: Type of transition (join, split, decay)
+        depth_gate_reuse: Reuse bonus when target depth >= threshold (Symmetry Break A)
+        same_class_reuse: Reuse bonus when source/target in same class (Symmetry Break B)
+        cross_class_reuse: Reuse bonus when source/target in different classes (Symmetry Break B)
+        founder_reuse: Reuse bonus for early-visited states (Symmetry Break C)
     """
     reuse_count: int = 0
     depth_change: int = 0
     size_change: int = 0
-    motif_gained: Set[str] = None
-    motif_lost: Set[str] = None
-    symmetry_score: float = 0.0
-    diversity_score: float = 0.0
+    motif_gained: set[str] = None
+    motif_lost: set[str] = None
+    transition_type: str = ""
+    depth_gate_reuse: float = 0.0
+    same_class_reuse: float = 0.0
+    cross_class_reuse: float = 0.0
+    founder_reuse: float = 0.0
     
     def __post_init__(self):
         if self.motif_gained is None:
@@ -48,10 +52,10 @@ class TransitionFeatures:
         if self.motif_lost is None:
             self.motif_lost = set()
     
-    def to_dict(self) -> Dict[str, float]:
+    def to_dict(self) -> dict[str, float]:
         """
         Convert features to flat dict for constraint evaluation.
-        
+
         Returns:
             Dict of feature_name -> value
         """
@@ -59,16 +63,22 @@ class TransitionFeatures:
             'reuse_count': float(self.reuse_count),
             'depth_change': float(self.depth_change),
             'size_change': float(self.size_change),
-            'symmetry_score': self.symmetry_score,
-            'diversity_score': self.diversity_score,
+            'depth_gate_reuse': self.depth_gate_reuse,
+            'same_class_reuse': self.same_class_reuse,
+            'cross_class_reuse': self.cross_class_reuse,
+            'founder_reuse': self.founder_reuse,
         }
-        
+
+        # Add transition type indicator
+        if self.transition_type:
+            features[f'transition_{self.transition_type}'] = 1.0
+
         # Add motif indicators
         for motif in self.motif_gained:
             features[f'motif_gained_{motif}'] = 1.0
         for motif in self.motif_lost:
             features[f'motif_lost_{motif}'] = 1.0
-        
+
         return features
 
 
@@ -86,44 +96,84 @@ class AssemblyFeatureExtractor:
     - Interpretable: Clear physical meaning
     """
     
+    def __init__(
+        self,
+        depth_gate_threshold: int | None = None,
+        primitive_classes: dict[str, str] | None = None,
+        founder_rank_threshold: int | None = None,
+    ):
+        self.depth_gate_threshold = depth_gate_threshold
+        self.primitive_classes = primitive_classes or {}
+        self.founder_rank_threshold = founder_rank_threshold
+
     def extract_features(
         self,
         source: AssemblyState,
         target: AssemblyState,
         transition_type: TransitionType,
+        *,
+        target_depth: int | None = None,
+        founder_rank: int | None = None,
     ) -> TransitionFeatures:
         """
         Extract all features from a transition.
-        
+
         Args:
             source: Source assembly state
             target: Target assembly state
             transition_type: Type of transition
-            
+            target_depth: Optional depth for Symmetry Break A (overrides target.assembly_depth)
+            founder_rank: Optional rank for Symmetry Break C (1 = founder, higher = derived)
+
         Returns:
             TransitionFeatures object
         """
         features = TransitionFeatures()
-        
+
         # Reuse: how many times does source appear in target's history?
-        features.reuse_count = self._compute_reuse(source, target)
-        
+        reuse = self._compute_reuse(source, target)
+        features.reuse_count = reuse
+
         # Depth change
         features.depth_change = target.assembly_depth - source.assembly_depth
-        
+
         # Size change
         features.size_change = target.size - source.size
-        
+
         # Motif changes
         features.motif_gained = target.motifs - source.motifs
         features.motif_lost = source.motifs - target.motifs
-        
-        # Symmetry (of target)
-        features.symmetry_score = self._compute_symmetry(target)
-        
-        # Diversity (of target)
-        features.diversity_score = self._compute_diversity(target)
-        
+
+        # Transition type
+        features.transition_type = transition_type.value if transition_type else ""
+
+        # Symmetry Break A: Depth-gated reuse
+        # Bonus when reuse occurs at depth >= threshold
+        effective_depth = target_depth if target_depth is not None else target.assembly_depth
+        if (
+            reuse > 0
+            and self.depth_gate_threshold is not None
+            and effective_depth >= self.depth_gate_threshold
+        ):
+            features.depth_gate_reuse = float(reuse)
+
+        # Symmetry Break B: Context-class reuse
+        # Bonus for same-class reuse, penalty for cross-class
+        if reuse > 0 and self.primitive_classes:
+            source_classes = {self.primitive_classes.get(p, "unknown") for p in source.get_parts_dict().keys()}
+            target_classes = {self.primitive_classes.get(p, "unknown") for p in target.get_parts_dict().keys()}
+            if source_classes and target_classes:
+                if source_classes == target_classes:
+                    features.same_class_reuse = float(reuse)
+                else:
+                    features.cross_class_reuse = float(reuse)
+
+        # Symmetry Break C: Founder bias
+        # Bonus for early-visited (founder) states
+        if reuse > 0 and founder_rank is not None and self.founder_rank_threshold is not None:
+            if founder_rank <= self.founder_rank_threshold:
+                features.founder_reuse = float(reuse)
+
         return features
     
     def _compute_reuse(self, source: AssemblyState, target: AssemblyState) -> int:
@@ -137,49 +187,9 @@ class AssemblyFeatureExtractor:
             return 1
         return 0
     
-    def _compute_symmetry(self, state: AssemblyState) -> float:
-        """
-        Compute symmetry score of state.
-        
-        Simple heuristic: ratio of most common part to total parts.
-        1.0 = all same part (maximally symmetric)
-        1/n = all different parts (minimally symmetric)
-        """
-        if state.size == 0:
-            return 0.0
-        
-        parts_dict = state.get_parts_dict()
-        if not parts_dict:
-            return 0.0
-        
-        max_count = max(parts_dict.values())
-        return max_count / state.size
-    
-    def _compute_diversity(self, state: AssemblyState) -> float:
-        """
-        Compute part diversity (Shannon entropy).
-        
-        Higher = more diverse parts
-        Lower = dominated by few parts
-        """
-        if state.size == 0:
-            return 0.0
-        
-        parts_dict = state.get_parts_dict()
-        if not parts_dict:
-            return 0.0
-        
-        # Shannon entropy: -sum(p_i * log(p_i))
-        entropy = 0.0
-        for count in parts_dict.values():
-            p = count / state.size
-            if p > 0:
-                entropy -= p * np.log(p)
-        
-        return entropy
 
     @staticmethod
-    def _is_submultiset(source_parts: Dict[str, int], target_parts: Dict[str, int]) -> bool:
+    def _is_submultiset(source_parts: dict[str, int], target_parts: dict[str, int]) -> bool:
         """
         Check whether every part in source_parts appears at least as many times in target_parts.
 
@@ -194,7 +204,7 @@ class AssemblyFeatureExtractor:
     def get_feature_names(self) -> list[str]:
         """
         Get list of all possible feature names.
-        
+
         Returns:
             List of feature names
         """
@@ -202,10 +212,14 @@ class AssemblyFeatureExtractor:
             'reuse_count',
             'depth_change',
             'size_change',
-            'symmetry_score',
-            'diversity_score',
-            # Motif features are dynamic (motif_gained_X, motif_lost_X)
+            'depth_gate_reuse',
+            'same_class_reuse',
+            'cross_class_reuse',
+            'founder_reuse',
         ]
-    
+
     def __str__(self) -> str:
-        return "AssemblyFeatureExtractor(features: reuse, depth, size, motifs, symmetry, diversity)"
+        return (
+            "AssemblyFeatureExtractor(features: reuse, depth, size, motifs, "
+            "depth_gate, context_class, founder_bias)"
+        )

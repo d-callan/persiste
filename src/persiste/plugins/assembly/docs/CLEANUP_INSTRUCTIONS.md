@@ -66,9 +66,11 @@ This will:
 ## What Gets Kept
 
 ### Working Code (validated baseline)
-- ✓ `examples/assembly_validation_fixed.py` - **Use this!**
+- ✓ `plugins/assembly/validation/experiments/assembly_validation.py` - **Use this!**
+- ✓ `plugins/assembly/validation/experiments/assembly_robustness_tests.py`
+- ✓ `plugins/assembly/validation/experiments/assembly_robustness_detailed.py`
+- ✓ `plugins/assembly/validation/scripts/` utilities (benchmark + dataset generation)
 - ✓ `examples/assembly_scaling_curves.py`
-- ✓ `examples/assembly_robustness_tests.py`
 - ✓ All core assembly plugin code (states, baselines, constraints, etc.)
 
 ### Documentation (useful reference)

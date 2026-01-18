@@ -117,6 +117,7 @@ class CachedAssemblyObservationModel:
 
         self._cache: CacheState | None = None
         self._resimulation_count = 0
+        self._last_ess_ratio: float | None = 1.0
 
     def get_latent_states(
         self,
@@ -138,6 +139,7 @@ class CachedAssemblyObservationModel:
 
         if self._cache is None:
             self._initialize_cache(theta)
+            self._last_ess_ratio = 1.0
             return self._get_current_states()
 
         # Check topology guard first (hard resimulation trigger)
@@ -168,6 +170,7 @@ class CachedAssemblyObservationModel:
 
         if status["valid"]:
             logger.debug(f"Cache valid. ESS={status['ess']:.1f}")
+            self._update_ess_ratio(status.get("ess"))
             return status["latent_states"]
         else:
             logger.info(f"Cache invalid: {status['reason']}. Resimulating.")
@@ -201,6 +204,7 @@ class CachedAssemblyObservationModel:
             theta_ref=theta_ref.copy(),
             n_transitions=[r["n_transitions"] for r in results],
         )
+        self._last_ess_ratio = 1.0
 
     def _resimulate(self, theta_ref: dict[str, float], reason: str) -> None:
         """Resimulate at new reference point."""
@@ -245,3 +249,19 @@ class CachedAssemblyObservationModel:
     def invalidate_cache(self) -> None:
         """Force cache invalidation (for testing or after external changes)."""
         self._cache = None
+
+    def _update_ess_ratio(self, ess_value: float | None) -> None:
+        """Track latest ESS ratio for downstream weighting."""
+        if ess_value is None or self._cache is None:
+            self._last_ess_ratio = None
+            return
+        n_paths = len(self._cache.feature_counts) or 1
+        ratio = ess_value / n_paths
+        self._last_ess_ratio = max(0.0, min(1.0, ratio))
+
+    @property
+    def current_ess_ratio(self) -> float:
+        """Return last known ESS ratio (0-1)."""
+        if self._last_ess_ratio is None:
+            return 1.0
+        return self._last_ess_ratio

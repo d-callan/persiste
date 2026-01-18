@@ -16,7 +16,7 @@ use rayon::prelude::*;
 use super::baseline::{AssemblyBaseline, TransitionType};
 use super::constraint::AssemblyConstraint;
 use super::path_stats::PathStats;
-use super::state::AssemblyState;
+use super::state::{AssemblyState, AssemblyStateId};
 
 /// Neighbor in the assembly graph: (target_state, effective_rate, transition_type).
 pub type Neighbor = (AssemblyState, f64, TransitionType);
@@ -34,6 +34,37 @@ pub struct SimulationConfig {
     pub min_rate_threshold: f64,
     /// Primitives (initial building blocks).
     pub primitives: Vec<String>,
+    /// Depth threshold for non-stationarity (Symmetry Break A).
+    /// If Some(d_star), apply depth-gated reuse modifier when max_depth >= d_star.
+    pub depth_gate_threshold: Option<u32>,
+    /// Reuse modifier strength for depth-gated regime (θ_depth in exp(θ_depth)).
+    pub depth_gate_theta: f64,
+    /// Optional context-class configuration (Symmetry Break B).
+    pub context_class_config: Option<ContextClassConfig>,
+    /// Optional founder-bias configuration (Symmetry Break C).
+    pub founder_bias_config: Option<FounderBiasConfig>,
+}
+
+/// Optional configuration for context-dependent reuse (Symmetry Break B).
+#[derive(Clone, Debug)]
+pub struct ContextClassConfig {
+    /// Mapping from primitive name to context class label.
+    pub primitive_classes: HashMap<String, String>,
+    /// Log-scale modifier applied when reuse occurs within the same class.
+    pub same_class_theta: f64,
+    /// Log-scale modifier applied when reuse occurs across classes.
+    pub cross_class_theta: f64,
+}
+
+/// Configuration for founder bias (Symmetry Break C).
+#[derive(Clone, Debug)]
+pub struct FounderBiasConfig {
+    /// States with visit rank <= threshold get founder bonus.
+    pub founder_rank_threshold: u32,
+    /// Log-scale bonus applied to founders (exp applied internally).
+    pub founder_bonus_theta: f64,
+    /// Log-scale penalty applied to late/derived states.
+    pub late_penalty_theta: f64,
 }
 
 impl Default for SimulationConfig {
@@ -44,6 +75,10 @@ impl Default for SimulationConfig {
             max_depth: 5,
             min_rate_threshold: 1e-6,
             primitives: vec!["A".to_string()],
+            depth_gate_threshold: None,
+            depth_gate_theta: 0.0,
+            context_class_config: None,
+            founder_bias_config: None,
         }
     }
 }
@@ -91,7 +126,9 @@ impl GillespieSimulator {
             let target = state.join_with(primitive);
             let base_rate = self.baseline.get_rate(state, &target, TransitionType::Join);
             let multiplier = self.constraint.rate_multiplier(state, &target, TransitionType::Join);
-            let effective_rate = base_rate * multiplier;
+            let class_multiplier =
+                self.compute_class_modifier(state, &target, TransitionType::Join);
+            let effective_rate = base_rate * multiplier * class_multiplier;
 
             if effective_rate > self.config.min_rate_threshold {
                 neighbors.push((target, effective_rate, TransitionType::Join));
@@ -139,7 +176,9 @@ impl GillespieSimulator {
 
             let base_rate = self.baseline.get_rate(state, &target, TransitionType::Split);
             let multiplier = self.constraint.rate_multiplier(state, &target, TransitionType::Split);
-            let effective_rate = base_rate * multiplier;
+            let class_multiplier =
+                self.compute_class_modifier(state, &target, TransitionType::Split);
+            let effective_rate = base_rate * multiplier * class_multiplier;
 
             if effective_rate > self.config.min_rate_threshold {
                 neighbors.push((target, effective_rate, TransitionType::Split));
@@ -156,7 +195,9 @@ impl GillespieSimulator {
         let target = AssemblyState::empty();
         let base_rate = self.baseline.get_rate(state, &target, TransitionType::Decay);
         let multiplier = self.constraint.rate_multiplier(state, &target, TransitionType::Decay);
-        let effective_rate = base_rate * multiplier;
+        let class_multiplier =
+            self.compute_class_modifier(state, &target, TransitionType::Decay);
+        let effective_rate = base_rate * multiplier * class_multiplier;
 
         if effective_rate > self.config.min_rate_threshold {
             neighbors.push((target, effective_rate, TransitionType::Decay));
@@ -171,6 +212,12 @@ impl GillespieSimulator {
         let mut current_time = 0.0;
 
         let mut path_stats = PathStats::new(current_state.id(), 0.0);
+        let mut max_depth_reached = current_state.depth();
+        let mut visit_rank: HashMap<AssemblyStateId, u32> = HashMap::new();
+        let mut first_visit_time: HashMap<AssemblyStateId, f64> = HashMap::new();
+        let mut next_rank: u32 = 1;
+        visit_rank.insert(current_state.id(), 0);
+        first_visit_time.insert(current_state.id(), 0.0);
 
         while current_time < self.config.t_max {
             let neighbors = self.get_neighbors(&current_state);
@@ -180,8 +227,24 @@ impl GillespieSimulator {
                 break;
             }
 
-            // Extract rates
-            let rates: Vec<f64> = neighbors.iter().map(|(_, rate, _)| *rate).collect();
+            // Extract rates with depth-gated modifier (Symmetry Break A)
+            let depth_modifier = self.compute_depth_gate_modifier(max_depth_reached);
+            let rates: Vec<f64> = neighbors
+                .iter()
+                .map(|(target, rate, transition_type)| {
+                    let mut effective = *rate;
+                    if self.is_reuse_transition(&current_state, target) {
+                        effective *= depth_modifier;
+                        if *transition_type == TransitionType::Join {
+                            effective *= self.compute_founder_multiplier(
+                                &current_state,
+                                &visit_rank,
+                            );
+                        }
+                    }
+                    effective
+                })
+                .collect();
             let total_rate: f64 = rates.iter().sum();
 
             if total_rate <= 0.0 {
@@ -212,16 +275,43 @@ impl GillespieSimulator {
 
             // Record transition features (after burn-in)
             if current_time >= self.config.burn_in {
-                let features = self.extract_transition_features(&current_state, next_state, *transition_type);
+                let mut features =
+                    self.extract_transition_features(&current_state, next_state, *transition_type);
+                if let Some(config) = &self.config.founder_bias_config {
+                    if *transition_type == TransitionType::Join
+                        && self.is_reuse_transition(&current_state, next_state)
+                    {
+                        let source_rank =
+                            *visit_rank.get(&current_state.id()).unwrap_or(&u32::MAX);
+                        if source_rank <= config.founder_rank_threshold {
+                            features.insert("founder_reuse".to_string(), 1.0);
+                        } else {
+                            features.insert("derived_reuse".to_string(), 1.0);
+                        }
+                    }
+                }
                 path_stats.record_transition(&features);
             }
 
             current_state = next_state.clone();
+            if current_state.depth() > max_depth_reached {
+                max_depth_reached = current_state.depth();
+            }
+
+            if !visit_rank.contains_key(&current_state.id()) {
+                visit_rank.insert(current_state.id(), next_rank);
+                first_visit_time.insert(current_state.id(), current_time);
+                next_rank += 1;
+            }
         }
 
         // Update final state and duration
         path_stats.final_state_id = current_state.id();
         path_stats.duration = current_time.min(self.config.t_max);
+        path_stats.max_depth_reached = max_depth_reached as u16;
+        path_stats.founder_rank = *visit_rank.get(&current_state.id()).unwrap_or(&u32::MAX);
+        path_stats.first_visit_time =
+            *first_visit_time.get(&current_state.id()).unwrap_or(&0.0);
 
         path_stats
     }
@@ -257,7 +347,104 @@ impl GillespieSimulator {
             1.0,
         );
 
+        if let Some(config) = &self.config.context_class_config {
+            if transition_type == TransitionType::Join && self.is_reuse_transition(source, target) {
+                let source_class = self.state_class(source, &config.primitive_classes);
+                let target_class = self.state_class(target, &config.primitive_classes);
+                if let (Some(s_class), Some(t_class)) = (source_class, target_class) {
+                    if s_class == t_class {
+                        features.insert("reuse_same_class".to_string(), 1.0);
+                    } else {
+                        features.insert("reuse_cross_class".to_string(), 1.0);
+                    }
+                }
+            }
+        }
+
         features
+    }
+
+    /// Compute depth-gate modifier for Symmetry Break A.
+    ///
+    /// Returns exp(θ_depth) if max_depth >= threshold, else 1.0.
+    fn compute_depth_gate_modifier(&self, max_depth_reached: u32) -> f64 {
+        if let Some(threshold) = self.config.depth_gate_threshold {
+            if max_depth_reached >= threshold {
+                return self.config.depth_gate_theta.exp();
+            }
+        }
+        1.0
+    }
+
+    /// Check if a transition involves reuse (source is subassembly of target).
+    fn is_reuse_transition(&self, source: &AssemblyState, target: &AssemblyState) -> bool {
+        source.is_subassembly_of(target)
+    }
+
+    /// Compute multiplier for founder bias (Symmetry Break C).
+    fn compute_founder_multiplier(
+        &self,
+        state: &AssemblyState,
+        visit_rank: &HashMap<AssemblyStateId, u32>,
+    ) -> f64 {
+        let Some(config) = &self.config.founder_bias_config else {
+            return 1.0;
+        };
+
+        let rank = visit_rank.get(&state.id()).copied().unwrap_or(u32::MAX);
+        if rank <= config.founder_rank_threshold {
+            config.founder_bonus_theta.exp()
+        } else {
+            config.late_penalty_theta.exp()
+        }
+    }
+
+    /// Compute multiplier for context-class interactions (Symmetry Break B).
+    fn compute_class_modifier(
+        &self,
+        source: &AssemblyState,
+        target: &AssemblyState,
+        transition_type: TransitionType,
+    ) -> f64 {
+        let Some(config) = &self.config.context_class_config else {
+            return 1.0;
+        };
+
+        if transition_type != TransitionType::Join {
+            return 1.0;
+        }
+
+        if !self.is_reuse_transition(source, target) {
+            return 1.0;
+        }
+
+        let source_class = self.state_class(source, &config.primitive_classes);
+        let target_class = self.state_class(target, &config.primitive_classes);
+
+        match (source_class, target_class) {
+            (Some(s), Some(t)) if s == t => config.same_class_theta.exp(),
+            (Some(_), Some(_)) => config.cross_class_theta.exp(),
+            _ => 1.0,
+        }
+    }
+
+    fn state_class(
+        &self,
+        state: &AssemblyState,
+        class_map: &HashMap<String, String>,
+    ) -> Option<String> {
+        let mut counts: HashMap<String, u32> = HashMap::new();
+
+        for (part, count) in state.parts() {
+            if let Some(class_label) = class_map.get(part) {
+                *counts.entry(class_label.clone()).or_insert(0) += count;
+            }
+        }
+
+        counts
+            .into_iter()
+            .max_by_key(|(_class, count)| *count)
+            .map(|(class, _)| class)
     }
 }
 
@@ -342,6 +529,8 @@ mod tests {
             max_depth: 3,
             min_rate_threshold: 1e-6,
             primitives: vec!["A".to_string(), "B".to_string()],
+            depth_gate_threshold: None,
+            depth_gate_theta: 0.0,
         }
     }
 

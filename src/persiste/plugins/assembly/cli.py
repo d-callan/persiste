@@ -2,9 +2,12 @@
 CLI entry points for assembly constraint inference.
 
 Modes:
+- safety-only: Run only safety checks, no inference (pre-flight mode)
 - screen-only: Fast deterministic screening, no stochastic refinement
 - screen-and-refine: Screen candidates, refine winners stochastically
 - full-stochastic: No shortcuts, run full Gillespie-based inference
+
+Safety checks (Tier 1) run automatically unless --skip-safety-checks is set.
 """
 
 import argparse
@@ -12,6 +15,7 @@ import json
 import logging
 import sys
 from enum import Enum
+from typing import Any
 
 from persiste.plugins.assembly.baselines.assembly_baseline import AssemblyBaseline
 from persiste.plugins.assembly.constraints.assembly_constraint import AssemblyConstraint
@@ -20,8 +24,11 @@ from persiste.plugins.assembly.observation.cached_observation import (
     CacheConfig,
     SimulationSettings,
 )
+from persiste.plugins.assembly.likelihood import compute_observation_ll
+from persiste.plugins.assembly.safety import run_safety_checks
 from persiste.plugins.assembly.screening.screening import (
     AdaptiveScreeningGrid,
+    ScreeningResult,
     adaptive_screen,
 )
 from persiste.plugins.assembly.screening.steady_state import (
@@ -36,14 +43,17 @@ logger = logging.getLogger(__name__)
 class InferenceMode(Enum):
     """Inference mode for assembly constraints."""
 
+    SAFETY_ONLY = "safety-only"
+    """Run only safety checks, no inference."""
+
     SCREEN_ONLY = "screen-only"
     """Fast, deterministic only."""
 
     SCREEN_AND_REFINE = "screen-and-refine"
-    """Screen then stochastic."""
+    """Screen then stochastic (optional deterministic stage)."""
 
     FULL_STOCHASTIC = "full-stochastic"
-    """No shortcuts, explicit slow."""
+    """No shortcuts, stochastic inference only."""
 
 
 class TrustRegionType(Enum):
@@ -72,6 +82,8 @@ def fit_assembly_constraints(
     *,
     mode: InferenceMode = InferenceMode.FULL_STOCHASTIC,
     feature_names: list[str] | None = None,
+    # Safety options
+    skip_safety_checks: bool = False,
     # Screening options
     screening_threshold: float = 2.0,
     screen_grid: ScreeningGridMode = ScreeningGridMode.AUTO,
@@ -93,6 +105,10 @@ def fit_assembly_constraints(
     join_exponent: float = -0.5,
     split_exponent: float = 0.3,
     decay_rate: float = 0.01,
+    # Observation statistics (optional enriched inputs)
+    observation_records: list[dict[str, Any]] | None = None,
+    # Screening toggle
+    use_screening: bool = False,
 ) -> dict:
     """
     Fit assembly constraints with configurable inference mode.
@@ -100,8 +116,9 @@ def fit_assembly_constraints(
     Args:
         observed_compounds: Set of observed compound identifiers
         primitives: List of primitive building blocks
-        mode: Inference mode (screen-only, screen-and-refine, full-stochastic)
+        mode: Inference mode (safety-only, screen-only, screen-and-refine, full-stochastic)
         feature_names: Feature names to consider (default: reuse_count, depth_change)
+        skip_safety_checks: Skip Tier 1 safety checks (not recommended)
         screening_threshold: Normalized ΔLL threshold for screening
         screen_grid: Screening grid mode (auto or manual)
         screen_budget: Total deterministic evaluations for screening
@@ -119,13 +136,15 @@ def fit_assembly_constraints(
         join_exponent: Baseline join exponent
         split_exponent: Baseline split exponent
         decay_rate: Baseline decay rate
+        observation_records: Enriched observation records (frequencies, etc.)
 
     Returns:
         Dict with keys:
         - mode: Inference mode used
-        - theta_hat: Estimated feature weights
+        - theta_hat: Estimated feature weights (None if safety-only)
         - screening_results: List of screening results (if applicable)
         - cache_stats: Cache statistics (if applicable)
+        - safety: SafetyReport (unless skip_safety_checks=True)
     """
     if feature_names is None:
         feature_names = ["reuse_count", "depth_change"]
@@ -144,10 +163,71 @@ def fit_assembly_constraints(
         "theta_hat": {},
         "screening_results": [],
         "cache_stats": None,
+        "safety": None,
+        "deterministic_delta_ll": None,
+        "deterministic_ll": None,
+        "deterministic_null_ll": None,
+        "deterministic_normalized_delta_ll": None,
+        "deterministic_vs_stochastic_delta_gap": None,
     }
 
-    # Phase 1: Screening (if not full-stochastic)
-    if mode in (InferenceMode.SCREEN_ONLY, InferenceMode.SCREEN_AND_REFINE):
+    # Safety-only mode: run checks and return early
+    if mode == InferenceMode.SAFETY_ONLY:
+        logger.info("Running safety-only mode (pre-flight checks)")
+
+        # Run minimal screening for identifiability check
+        ss_model = SteadyStateAssemblyModel(
+            primitives=primitives,
+            baseline=baseline,
+            config=SteadyStateConfig(max_depth=max_depth),
+        )
+
+        grid = AdaptiveScreeningGrid(
+            feature_names=feature_names,
+            budget=min(screen_budget, 20),  # Reduced budget for safety-only
+            top_k=3,
+            refine_radius=screen_refine_radius,
+        )
+
+        screening_results = adaptive_screen(
+            model=ss_model,
+            observed_compounds=observed_compounds,
+            initial_state=initial_state,
+            grid=grid,
+            threshold=screening_threshold,
+            observation_records=observation_records,
+            max_depth=max_depth,
+        )
+
+        # Run safety checks
+        safety_report = run_safety_checks(
+            observed_compounds=observed_compounds,
+            primitives=primitives,
+            baseline=baseline,
+            initial_state=initial_state,
+            theta_hat={},
+            screening_results=screening_results,
+            cache_stats={"initialized": False, "n_paths": 0},
+            n_baseline_samples=n_samples,
+            max_depth=max_depth,
+            seed=seed,
+        )
+
+        result["safety"] = safety_report.to_dict()
+        logger.info(f"Safety check complete. Status: {safety_report.overall_status}")
+        return result
+
+    # Determine whether deterministic screening should run
+    should_screen = use_screening or mode in (
+        InferenceMode.SCREEN_ONLY,
+        InferenceMode.SCREEN_AND_REFINE,
+    )
+
+    # Phase 1: Screening (if enabled)
+    if should_screen and mode in (
+        InferenceMode.SCREEN_ONLY,
+        InferenceMode.SCREEN_AND_REFINE,
+    ):
         logger.info(f"Running deterministic screening (mode={mode.value})")
 
         # Create steady-state model
@@ -172,6 +252,8 @@ def fit_assembly_constraints(
             initial_state=initial_state,
             grid=grid,
             threshold=screening_threshold,
+            observation_records=observation_records,
+            max_depth=max_depth,
         )
 
         result["screening_results"] = [
@@ -181,9 +263,17 @@ def fit_assembly_constraints(
                 "normalized_delta_ll": r.normalized_delta_ll,
                 "passed": r.passed,
                 "rank": r.rank,
+                "absolute_ll": r.absolute_ll,
+                "null_ll": r.null_ll,
             }
             for r in screening_results
         ]
+        if screening_results:
+            best = screening_results[0]
+            result["deterministic_delta_ll"] = best.delta_ll
+            result["deterministic_ll"] = best.absolute_ll
+            result["deterministic_null_ll"] = best.null_ll
+            result["deterministic_normalized_delta_ll"] = best.normalized_delta_ll
 
         # Get best hypothesis
         if screening_results and screening_results[0].passed:
@@ -193,6 +283,11 @@ def fit_assembly_constraints(
 
         if mode == InferenceMode.SCREEN_ONLY:
             logger.info(f"Screening complete. Best θ: {result['theta_hat']}")
+            return result
+    else:
+        result["screening_results"] = []
+        if mode == InferenceMode.SCREEN_ONLY:
+            # Already raised earlier, safeguard
             return result
 
     # Phase 2: Stochastic refinement (if screen-and-refine or full-stochastic)
@@ -220,60 +315,159 @@ def fit_assembly_constraints(
         # Start from screening result if available
         theta_init = result["theta_hat"] if result["theta_hat"] else {}
 
+        # Get latent states at null model for ΔLL baseline
+        null_constraint = AssemblyConstraint(feature_weights={})
+        null_latent_states = cached_model.get_latent_states(null_constraint)
+
+        null_ll = compute_observation_ll(
+            null_latent_states,
+            observed_compounds,
+            primitives,
+            observation_records=observation_records,
+            max_depth=max_depth,
+            null_latent_states=None,  # Absolute LL for null
+            ess_ratio=1.0,
+        )
+
         # Get latent states at initial theta
         constraint = AssemblyConstraint(feature_weights=theta_init)
         latent_states = cached_model.get_latent_states(constraint)
+        ess_ratio = cached_model.current_ess_ratio
 
         # Simple refinement: evaluate a few nearby points
         # (Full optimization would use scipy.optimize or similar)
         best_theta = theta_init
-        best_ll = _compute_observation_ll(latent_states, observed_compounds, primitives)
+        best_ll = compute_observation_ll(
+            latent_states,
+            observed_compounds,
+            primitives,
+            observation_records=observation_records,
+            max_depth=max_depth,
+            null_latent_states=None,
+            ess_ratio=ess_ratio,
+        )
+        best_delta_ll = best_ll - null_ll
 
-        logger.info(f"Initial θ={theta_init}, LL={best_ll:.2f}")
+        logger.info(f"Initial θ={theta_init}, ΔLL={best_delta_ll:.2f}, null_LL={null_ll:.2f}")
 
-        # Grid search around initial point
-        for feature in feature_names:
-            for delta in [-0.5, 0.5, -1.0, 1.0]:
-                test_theta = best_theta.copy()
-                test_theta[feature] = test_theta.get(feature, 0.0) + delta
+        # Iterative Coordinate Descent (Hill Climbing)
+        # We loop until convergence or max iterations is reached.
+        # This allows the optimizer to climb from 0.0 to higher values (e.g. 2.5) step-by-step.
+        max_iterations = 10
+        iteration = 0
+        converged = False
+        
+        logger.info(f"Starting stochastic hill climbing (max_iter={max_iterations})...")
 
-                constraint = AssemblyConstraint(feature_weights=test_theta)
-                latent_states = cached_model.get_latent_states(constraint)
-                ll = _compute_observation_ll(latent_states, observed_compounds, primitives)
+        while not converged and iteration < max_iterations:
+            iteration += 1
+            improved_in_pass = False
+            
+            # Grid search around current best point
+            # Regularization: skip large steps if current ΔLL is small (avoid overfitting noise)
+            regularization_threshold = 0.5
+            
+            for feature in feature_names:
+                # Check neighbors in discrete steps
+                # Added finer steps (+/- 0.1) to catch subtle parameters like depth_change
+                for delta in [-0.1, 0.1, -0.5, 0.5, -1.0, 1.0]:
+                    test_theta = best_theta.copy()
+                    test_theta[feature] = test_theta.get(feature, 0.0) + delta
 
-                if ll > best_ll:
-                    best_ll = ll
-                    best_theta = test_theta
-                    logger.info(f"Improved: θ={best_theta}, LL={best_ll:.2f}")
+                    # Skip if this would push θ too far from zero when ΔLL is already small
+                    if best_delta_ll < regularization_threshold:
+                        theta_norm = sum(abs(v) for v in test_theta.values())
+                        if theta_norm > 10.0:
+                            continue
+
+                    constraint = AssemblyConstraint(feature_weights=test_theta)
+                    latent_states = cached_model.get_latent_states(constraint)
+                    ess_ratio = cached_model.current_ess_ratio
+                    
+                    test_ll = compute_observation_ll(
+                        latent_states,
+                        observed_compounds,
+                        primitives,
+                        observation_records=observation_records,
+                        max_depth=max_depth,
+                        null_latent_states=None,
+                        ess_ratio=ess_ratio,
+                    )
+
+                    delta_ll = test_ll - null_ll
+                    
+                    # Require a small minimum improvement to avoid numerical jitter loops
+                    if delta_ll > best_delta_ll + 0.01:
+                        best_delta_ll = delta_ll
+                        best_theta = test_theta
+                        best_ll = test_ll
+                        improved_in_pass = True
+                        logger.info(f"Improved (iter {iteration}): θ={best_theta}, ΔLL={best_delta_ll:.2f}")
+                    elif logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(f"Rejected (iter {iteration}): θ={test_theta}, ΔLL={delta_ll:.2f} <= best={best_delta_ll:.2f}")
+            
+            if not improved_in_pass:
+                converged = True
+                logger.info(f"Converged after {iteration} iterations.")
+            elif iteration >= max_iterations:
+                logger.info(f"Reached max iterations ({max_iterations}). Stopping.")
 
         result["theta_hat"] = best_theta
+        result["stochastic_ll"] = best_ll
+        result["stochastic_null_ll"] = null_ll
+        result["stochastic_delta_ll"] = best_delta_ll
         result["cache_stats"] = cached_model.cache_stats
+        if result.get("deterministic_delta_ll") is not None:
+            result["deterministic_vs_stochastic_delta_gap"] = (
+                best_delta_ll - result["deterministic_delta_ll"]
+            )
+        logger.info(f"Stochastic refinement: best_θ={best_theta}, ΔLL={best_delta_ll:.2f}")
+
+    # Run Tier 1 safety checks (unless skipped)
+    if not skip_safety_checks:
+        logger.info("Running Tier 1 safety checks")
+
+        # Convert screening results to ScreeningResult objects if needed
+        screening_result_objs = []
+        for r in result.get("screening_results", []):
+            if isinstance(r, dict):
+                screening_result_objs.append(
+                    ScreeningResult(
+                        theta=r["theta"],
+                        delta_ll=r["delta_ll"],
+                        normalized_delta_ll=r["normalized_delta_ll"],
+                        passed=r["passed"],
+                        rank=r["rank"],
+                        absolute_ll=r.get("absolute_ll"),
+                        null_ll=r.get("null_ll"),
+                    )
+                )
+            else:
+                screening_result_objs.append(r)
+
+        safety_report = run_safety_checks(
+            observed_compounds=observed_compounds,
+            primitives=primitives,
+            baseline=baseline,
+            initial_state=initial_state,
+            theta_hat=result["theta_hat"],
+            screening_results=screening_result_objs,
+            cache_stats=result.get("cache_stats") or {"n_paths": n_samples},
+            n_baseline_samples=n_samples,
+            max_depth=max_depth,
+            seed=seed,
+        )
+
+        result["safety"] = safety_report.to_dict()
+
+        if not safety_report.overall_safe:
+            logger.warning(
+                f"Safety checks flagged issues: {safety_report.overall_status}. "
+                f"ΔLL threshold adjusted to {safety_report.adjusted_delta_ll_threshold:.1f}"
+            )
 
     logger.info(f"Inference complete. Final θ: {result['theta_hat']}")
     return result
-
-
-def _compute_observation_ll(
-    latent_states: dict[int, float],
-    observed_compounds: set[str],
-    primitives: list[str],
-) -> float:
-    """Simple observation log-likelihood (placeholder)."""
-    import math
-
-    if not latent_states:
-        return -math.inf
-
-    # Simple: log probability that any observed compound appears
-    log_lik = 0.0
-    for compound in observed_compounds:
-        # Assume compound present if it's a primitive
-        if compound in primitives:
-            log_lik += math.log(0.9)  # High probability for primitives
-        else:
-            log_lik += math.log(0.5)  # Moderate probability for others
-
-    return log_lik
 
 
 def main():
@@ -285,9 +479,15 @@ def main():
     parser.add_argument(
         "--mode",
         type=str,
-        choices=["screen-only", "screen-and-refine", "full-stochastic"],
+        choices=["safety-only", "screen-only", "screen-and-refine", "full-stochastic"],
         default="full-stochastic",
         help="Inference mode (default: full-stochastic)",
+    )
+
+    parser.add_argument(
+        "--skip-safety-checks",
+        action="store_true",
+        help="Skip Tier 1 safety checks (not recommended)",
     )
 
     parser.add_argument(
@@ -415,6 +615,7 @@ def main():
         primitives=primitives,
         mode=mode,
         feature_names=feature_names,
+        skip_safety_checks=args.skip_safety_checks,
         screen_grid=screen_grid,
         screen_budget=args.screen_budget,
         screen_topk=args.screen_topk,

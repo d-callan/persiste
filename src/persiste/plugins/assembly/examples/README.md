@@ -17,11 +17,13 @@ This directory contains examples demonstrating the Assembly Theory plugin.
 - **`assembly_full_demo.py`** - Complete workflow demonstration
 
 ### Validation & Testing
-- **`assembly_validation.py`** - Validation tests
-- **`assembly_validation_fixed.py`** - Fixed validation
-- **`assembly_validation_improved.py`** - Improved validation
-- **`assembly_robustness_tests.py`** - Robustness testing
-- **`assembly_robustness_detailed.py`** - Detailed robustness analysis
+Validation scripts and results now live under **`plugins/assembly/validation/`**:
+
+- **`validation/scripts/`** – Shared utilities (benchmark runner, dataset generation)
+- **`validation/experiments/`** – Reboot validation suites (null recovery, robustness scenarios)
+- **`validation/results/`** – Canonical outputs/logs for the current iteration
+
+See that directory’s README for the latest workflow details.
 
 ### Analysis & Visualization
 - **`assembly_model_comparison.py`** - Model comparison examples

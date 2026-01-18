@@ -8,6 +8,7 @@ import math
 from collections.abc import Iterator
 from dataclasses import dataclass
 
+from persiste.plugins.assembly.likelihood import compute_observation_ll
 from persiste.plugins.assembly.screening.steady_state import SteadyStateAssemblyModel
 from persiste.plugins.assembly.states.assembly_state import AssemblyState
 
@@ -30,6 +31,12 @@ class ScreeningResult:
 
     rank: int = 0
     """Rank among screened hypotheses (1 = best)."""
+
+    absolute_ll: float | None = None
+    """Deterministic absolute LL (baseline + ΔLL)."""
+
+    null_ll: float | None = None
+    """Deterministic null LL used for ΔLL normalization."""
 
 
 @dataclass
@@ -110,6 +117,9 @@ def screen_hypotheses(
     observed_compounds: set[str],
     initial_state: AssemblyState,
     threshold: float = 2.0,
+    *,
+    observation_records: list[dict] | None = None,
+    max_depth: int | None = None,
 ) -> list[ScreeningResult]:
     """
     Screen candidate θ values using deterministic approximation.
@@ -130,13 +140,32 @@ def screen_hypotheses(
     if not hypotheses:
         return []
 
-    # Compute baseline (θ=0) likelihood
-    ll_null = model.approximate_log_likelihood({}, observed_compounds, initial_state)
+    # Compute baseline (θ=0) occupancy and likelihood
+    null_latent_states = model.expected_occupancy({}, initial_state)
+    if not null_latent_states:
+        return []
+
+    effective_max_depth = max_depth or model.config.max_depth
+
+    ll_null = compute_observation_ll(
+        null_latent_states,
+        observed_compounds,
+        model.primitives,
+        observation_records=observation_records,
+        max_depth=effective_max_depth,
+        ess_ratio=1.0,
+    )
 
     results = []
     for theta in hypotheses:
-        ll = model.approximate_log_likelihood(theta, observed_compounds, initial_state)
-        delta_ll = ll - ll_null
+        delta_ll = model.approximate_log_likelihood(
+            theta,
+            observed_compounds,
+            initial_state,
+            observation_records=observation_records,
+            max_depth=max_depth,
+            null_latent_states=null_latent_states,
+        )
 
         # Fisher-ish scaling (cheap variance approximation)
         approx_var = _estimate_screening_variance(theta)
@@ -148,6 +177,8 @@ def screen_hypotheses(
                 delta_ll=delta_ll,
                 normalized_delta_ll=normalized,
                 passed=normalized > threshold,
+                absolute_ll=ll_null + delta_ll,
+                null_ll=ll_null,
             )
         )
 
@@ -167,6 +198,9 @@ def adaptive_screen(
     initial_state: AssemblyState,
     grid: AdaptiveScreeningGrid,
     threshold: float = 2.0,
+    *,
+    observation_records: list[dict] | None = None,
+    max_depth: int | None = None,
 ) -> list[ScreeningResult]:
     """
     Run adaptive screening with coarse-then-refine strategy.
@@ -197,7 +231,13 @@ def adaptive_screen(
             budget_remaining -= 1
 
     coarse_results = screen_hypotheses(
-        coarse_hypotheses, model, observed_compounds, initial_state, threshold
+        coarse_hypotheses,
+        model,
+        observed_compounds,
+        initial_state,
+        threshold,
+        observation_records=observation_records,
+        max_depth=max_depth,
     )
     all_results.extend(coarse_results)
 
@@ -220,7 +260,13 @@ def adaptive_screen(
 
         if refine_hypotheses:
             refine_results = screen_hypotheses(
-                refine_hypotheses, model, observed_compounds, initial_state, threshold
+                refine_hypotheses,
+                model,
+                observed_compounds,
+                initial_state,
+                threshold,
+                observation_records=observation_records,
+                max_depth=max_depth,
             )
             all_results.extend(refine_results)
 

@@ -5,11 +5,34 @@
 //! - Reusability of subassemblies
 //! - Environmental compatibility
 //! - Recursive reuse (core assembly theory idea)
+//! - Three symmetry breaks (depth-gating, context-class, founder bias)
 
 use std::collections::HashMap;
 
 use super::baseline::TransitionType;
 use super::state::AssemblyState;
+
+/// Configuration for context-dependent reuse (Symmetry Break B).
+#[derive(Clone, Debug)]
+pub struct ContextClassConfig {
+    /// Mapping from primitive name to context class label.
+    pub primitive_classes: HashMap<String, String>,
+    /// Log-scale modifier applied when reuse occurs within the same class.
+    pub same_class_theta: f64,
+    /// Log-scale modifier applied when reuse occurs across classes.
+    pub cross_class_theta: f64,
+}
+
+/// Configuration for founder bias (Symmetry Break C).
+#[derive(Clone, Debug)]
+pub struct FounderBiasConfig {
+    /// States with visit rank <= threshold get founder bonus.
+    pub founder_rank_threshold: u32,
+    /// Log-scale bonus applied to founders (exp applied internally).
+    pub founder_bonus_theta: f64,
+    /// Log-scale penalty applied to late/derived states.
+    pub late_penalty_theta: f64,
+}
 
 /// Assembly constraint model.
 ///
@@ -24,6 +47,12 @@ use super::state::AssemblyState;
 pub struct AssemblyConstraint {
     /// Feature weights: feature_name -> weight (log-scale)
     pub feature_weights: HashMap<String, f64>,
+    /// Optional depth threshold for Symmetry Break A
+    pub depth_gate_threshold: Option<u32>,
+    /// Optional context-class configuration for Symmetry Break B
+    pub context_class_config: Option<ContextClassConfig>,
+    /// Optional founder-bias configuration for Symmetry Break C
+    pub founder_bias_config: Option<FounderBiasConfig>,
 }
 
 impl AssemblyConstraint {
@@ -47,8 +76,10 @@ impl AssemblyConstraint {
         source: &AssemblyState,
         target: &AssemblyState,
         transition_type: TransitionType,
+        target_depth: Option<u32>,
+        founder_rank: Option<u32>,
     ) -> f64 {
-        let features = self.extract_features(source, target, transition_type);
+        let features = self.extract_features(source, target, transition_type, target_depth, founder_rank);
 
         let mut contribution = 0.0;
         for (feature_name, feature_value) in &features {
@@ -65,18 +96,23 @@ impl AssemblyConstraint {
         source: &AssemblyState,
         target: &AssemblyState,
         transition_type: TransitionType,
+        target_depth: Option<u32>,
+        founder_rank: Option<u32>,
     ) -> f64 {
-        self.constraint_contribution(source, target, transition_type).exp()
+        self.constraint_contribution(source, target, transition_type, target_depth, founder_rank).exp()
     }
 
     /// Extract features from a transition.
     ///
     /// Features are hypothesis-neutral observables.
-    fn extract_features(
+    /// Includes three symmetry breaks: depth-gating, context-class, founder bias.
+    pub fn extract_features(
         &self,
         source: &AssemblyState,
         target: &AssemblyState,
         transition_type: TransitionType,
+        target_depth: Option<u32>,
+        founder_rank: Option<u32>,
     ) -> HashMap<String, f64> {
         let mut features = HashMap::new();
 
@@ -111,6 +147,50 @@ impl AssemblyConstraint {
         for motif in source.motifs() {
             if !target.motifs().contains(motif) {
                 features.insert(format!("motif_lost_{}", motif), 1.0);
+            }
+        }
+
+        // Symmetry Break A: Depth-gated reuse
+        // Bonus when reuse occurs at depth >= threshold
+        if reuse_count > 0.0 {
+            if let Some(threshold) = self.depth_gate_threshold {
+                let effective_depth = target_depth.unwrap_or_else(|| target.depth());
+                if effective_depth >= threshold {
+                    features.insert("depth_gate_reuse".to_string(), reuse_count);
+                }
+            }
+
+            // Symmetry Break B: Context-class reuse
+            // Bonus for same-class reuse, penalty for cross-class
+            if let Some(ref config) = self.context_class_config {
+                let source_classes: std::collections::HashSet<_> = source
+                    .parts()
+                    .iter()
+                    .filter_map(|p| config.primitive_classes.get(p).cloned())
+                    .collect();
+                let target_classes: std::collections::HashSet<_> = target
+                    .parts()
+                    .iter()
+                    .filter_map(|p| config.primitive_classes.get(p).cloned())
+                    .collect();
+
+                if !source_classes.is_empty() && !target_classes.is_empty() {
+                    if source_classes == target_classes {
+                        features.insert("same_class_reuse".to_string(), reuse_count);
+                    } else {
+                        features.insert("cross_class_reuse".to_string(), reuse_count);
+                    }
+                }
+            }
+
+            // Symmetry Break C: Founder bias
+            // Bonus for early-visited (founder) states
+            if let Some(ref config) = self.founder_bias_config {
+                if let Some(rank) = founder_rank {
+                    if rank <= config.founder_rank_threshold {
+                        features.insert("founder_reuse".to_string(), reuse_count);
+                    }
+                }
             }
         }
 

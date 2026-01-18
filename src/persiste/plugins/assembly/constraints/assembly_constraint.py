@@ -40,6 +40,9 @@ class AssemblyConstraint(MultiplicativeConstraint):
         self,
         feature_weights: dict[str, float] | None = None,
         feature_extractor: AssemblyFeatureExtractor | None = None,
+        depth_gate_threshold: int | None = None,
+        primitive_classes: dict[str, str] | None = None,
+        founder_rank_threshold: int | None = None,
     ):
         """
         Initialize assembly constraint model.
@@ -47,6 +50,9 @@ class AssemblyConstraint(MultiplicativeConstraint):
         Args:
             feature_weights: Dict of feature_name -> weight (default: {} = null model)
             feature_extractor: Feature extractor (default: AssemblyFeatureExtractor())
+            depth_gate_threshold: Depth threshold for Symmetry Break A
+            primitive_classes: Mapping primitive -> class for Symmetry Break B
+            founder_rank_threshold: Rank threshold for Symmetry Break C
 
         Examples:
             # Null model (no constraints)
@@ -55,16 +61,33 @@ class AssemblyConstraint(MultiplicativeConstraint):
             # Reuse-only model
             constraint = AssemblyConstraint({'reuse_count': 1.0})
 
-            # Assembly theory model
-            constraint = AssemblyConstraint({
-                'reuse_count': 1.0,
-                'depth_change': -0.3,
-                'motif_gained_helix': 2.0,
-            })
+            # With Symmetry Break A (depth-gated reuse)
+            constraint = AssemblyConstraint(
+                {'depth_gate_reuse': 0.5},
+                depth_gate_threshold=3
+            )
+
+            # With Symmetry Break B (context-class reuse)
+            constraint = AssemblyConstraint(
+                {'same_class_reuse': 0.3, 'cross_class_reuse': -0.2},
+                primitive_classes={'A': 'class1', 'B': 'class1', 'C': 'class2'}
+            )
+
+            # With Symmetry Break C (founder bias)
+            constraint = AssemblyConstraint(
+                {'founder_reuse': 0.4},
+                founder_rank_threshold=2
+            )
         """
         self.feature_weights = feature_weights if feature_weights is not None else {}
         self.feature_extractor = (
-            feature_extractor if feature_extractor is not None else AssemblyFeatureExtractor()
+            feature_extractor
+            if feature_extractor is not None
+            else AssemblyFeatureExtractor(
+                depth_gate_threshold=depth_gate_threshold,
+                primitive_classes=primitive_classes,
+                founder_rank_threshold=founder_rank_threshold,
+            )
         )
         # Assembly constraints never allow facilitation (rates remain non-negative).
         self.allow_facilitation = False
@@ -111,22 +134,6 @@ class AssemblyConstraint(MultiplicativeConstraint):
         Core assembly theory idea: recursive reuse is favored.
         """
         return source.is_subassembly_of(target)
-
-    def _env_score(self, state: AssemblyState) -> float:
-        """
-        Environmental compatibility score.
-
-        Could be based on:
-        - Solubility proxies
-        - Size compatibility
-        - Functional group exposure
-
-        For now, simple placeholder.
-        """
-        # Favor intermediate sizes (bell curve)
-        optimal_size = 5
-        size_diff = abs(state.total_parts() - optimal_size)
-        return -0.1 * size_diff
 
     def get_parameters(self) -> dict[str, float]:
         """
