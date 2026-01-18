@@ -11,10 +11,6 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from persiste.plugins.assembly.diagnostics.artifacts import (
-    CachedPathData,
-    InferenceArtifacts,
-)
 from persiste.plugins.assembly.diagnostics.suite import baseline_sensitivity
 from persiste.plugins.assembly.recipes.base import DiagnosticReport
 
@@ -70,8 +66,7 @@ class BaselinePerturbationReport(DiagnosticReport):
 
 
 def baseline_perturbation_sensitivity(
-    artifacts: InferenceArtifacts,
-    cache: CachedPathData,
+    inference_result: dict,
     perturbations: list[dict] | None = None,
     stability_threshold: float = 0.5,
 ) -> BaselinePerturbationReport:
@@ -84,8 +79,8 @@ def baseline_perturbation_sensitivity(
     Uses importance reweighting to evaluate θ̂ under perturbed baselines.
 
     Args:
-        artifacts: InferenceArtifacts from fit_assembly_constraints
-        cache: CachedPathData from inference
+        inference_result: Result dict from fit_assembly_constraints
+            (must contain 'artifacts' and 'cache')
         perturbations: List of baseline perturbation dicts (default: kappa scaling)
         stability_threshold: Max θ deviation to be considered stable (default: 0.5)
 
@@ -93,12 +88,17 @@ def baseline_perturbation_sensitivity(
         BaselinePerturbationReport with sensitivity analysis
 
     Example:
-        >>> from persiste.plugins.assembly.recipes import baseline_perturbation_sensitivity
-        >>> report = baseline_perturbation_sensitivity(artifacts, cache)
+        >>> result = fit_assembly_constraints(...)
+        >>> report = baseline_perturbation_sensitivity(result)
         >>> report.print_summary()
-        >>> if not report.stable:
-        ...     print("WARNING: Inference sensitive to baseline!")
     """
+    artifacts = inference_result.get("artifacts")
+    cache = inference_result.get("cache")
+
+    if artifacts is None or cache is None:
+        msg = "Inference result must contain 'artifacts' and 'cache' for this diagnostic."
+        raise ValueError(msg)
+
     # Use existing implementation from diagnostics/suite.py
     result = baseline_sensitivity(
         artifacts=artifacts,

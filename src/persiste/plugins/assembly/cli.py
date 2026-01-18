@@ -19,12 +19,13 @@ from typing import Any
 
 from persiste.plugins.assembly.baselines.assembly_baseline import AssemblyBaseline
 from persiste.plugins.assembly.constraints.assembly_constraint import AssemblyConstraint
+from persiste.plugins.assembly.diagnostics.artifacts import CachedPathData, InferenceArtifacts
+from persiste.plugins.assembly.likelihood import compute_observation_ll
 from persiste.plugins.assembly.observation.cached_observation import (
-    CachedAssemblyObservationModel,
     CacheConfig,
+    CachedAssemblyObservationModel,
     SimulationSettings,
 )
-from persiste.plugins.assembly.likelihood import compute_observation_ll
 from persiste.plugins.assembly.safety import run_safety_checks
 from persiste.plugins.assembly.screening.screening import (
     AdaptiveScreeningGrid,
@@ -356,17 +357,17 @@ def fit_assembly_constraints(
         max_iterations = 10
         iteration = 0
         converged = False
-        
+
         logger.info(f"Starting stochastic hill climbing (max_iter={max_iterations})...")
 
         while not converged and iteration < max_iterations:
             iteration += 1
             improved_in_pass = False
-            
+
             # Grid search around current best point
             # Regularization: skip large steps if current ΔLL is small (avoid overfitting noise)
             regularization_threshold = 0.5
-            
+
             for feature in feature_names:
                 # Check neighbors in discrete steps
                 # Added finer steps (+/- 0.1) to catch subtle parameters like depth_change
@@ -383,7 +384,7 @@ def fit_assembly_constraints(
                     constraint = AssemblyConstraint(feature_weights=test_theta)
                     latent_states = cached_model.get_latent_states(constraint)
                     ess_ratio = cached_model.current_ess_ratio
-                    
+
                     test_ll = compute_observation_ll(
                         latent_states,
                         observed_compounds,
@@ -395,17 +396,22 @@ def fit_assembly_constraints(
                     )
 
                     delta_ll = test_ll - null_ll
-                    
+
                     # Require a small minimum improvement to avoid numerical jitter loops
                     if delta_ll > best_delta_ll + 0.01:
                         best_delta_ll = delta_ll
                         best_theta = test_theta
                         best_ll = test_ll
                         improved_in_pass = True
-                        logger.info(f"Improved (iter {iteration}): θ={best_theta}, ΔLL={best_delta_ll:.2f}")
+                        msg = f"Improved (iter {iteration}): θ={best_theta}"
+                        logger.info(msg)
                     elif logger.isEnabledFor(logging.DEBUG):
-                        logger.debug(f"Rejected (iter {iteration}): θ={test_theta}, ΔLL={delta_ll:.2f} <= best={best_delta_ll:.2f}")
-            
+                        msg = (
+                            f"Rejected (iter {iteration}): θ={test_theta}, "
+                            f"ΔLL={delta_ll:.2f} <= best={best_delta_ll:.2f}"
+                        )
+                        logger.debug(msg)
+
             if not improved_in_pass:
                 converged = True
                 logger.info(f"Converged after {iteration} iterations.")
@@ -417,11 +423,37 @@ def fit_assembly_constraints(
         result["stochastic_null_ll"] = null_ll
         result["stochastic_delta_ll"] = best_delta_ll
         result["cache_stats"] = cached_model.cache_stats
+
+        # Populate deep diagnostic artifacts for Tier 2 recipes
+        cache_id = f"cache_{seed}_{iteration}"
+        result["artifacts"] = InferenceArtifacts(
+            theta_hat=best_theta,
+            log_likelihood=best_ll,
+            cache_id=cache_id,
+            baseline_config={
+                "kappa": kappa,
+                "join_exponent": join_exponent,
+                "split_exponent": split_exponent,
+                "decay_rate": decay_rate
+            },
+            graph_config={
+                "primitives": primitives,
+                "max_depth": max_depth
+            }
+        )
+        if cached_model._cache:
+            result["cache"] = CachedPathData(
+                feature_counts=cached_model._cache.feature_counts,
+                final_state_ids=cached_model._cache.final_state_ids,
+                theta_ref=cached_model._cache.theta_ref
+            )
+
         if result.get("deterministic_delta_ll") is not None:
             result["deterministic_vs_stochastic_delta_gap"] = (
                 best_delta_ll - result["deterministic_delta_ll"]
             )
-        logger.info(f"Stochastic refinement: best_θ={best_theta}, ΔLL={best_delta_ll:.2f}")
+        msg = f"Stochastic refinement: best_θ={best_theta}, ΔLL={best_delta_ll:.2f}"
+        logger.info(msg)
 
     # Run Tier 1 safety checks (unless skipped)
     if not skip_safety_checks:
@@ -461,10 +493,11 @@ def fit_assembly_constraints(
         result["safety"] = safety_report.to_dict()
 
         if not safety_report.overall_safe:
-            logger.warning(
-                f"Safety checks flagged issues: {safety_report.overall_status}. "
+            msg = (
+                f"Safety issues: {safety_report.overall_status}"
                 f"ΔLL threshold adjusted to {safety_report.adjusted_delta_ll_threshold:.1f}"
             )
+            logger.warning(msg)
 
     logger.info(f"Inference complete. Final θ: {result['theta_hat']}")
     return result

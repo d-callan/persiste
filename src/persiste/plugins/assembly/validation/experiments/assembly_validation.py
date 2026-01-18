@@ -9,22 +9,24 @@ This is the credibility test.
 """
 
 import sys
+
 sys.path.insert(0, 'src')
 
 import numpy as np
-from persiste.plugins.assembly.states.assembly_state import AssemblyState
+from persiste.plugins.assembly.cli import fit_assembly_constraints, InferenceMode
+
 from persiste.plugins.assembly.baselines.assembly_baseline import AssemblyBaseline
 from persiste.plugins.assembly.constraints.assembly_constraint import AssemblyConstraint
-from persiste.plugins.assembly.graphs.assembly_graph import AssemblyGraph
 from persiste.plugins.assembly.dynamics.gillespie import GillespieSimulator
+from persiste.plugins.assembly.graphs.assembly_graph import AssemblyGraph
 from persiste.plugins.assembly.observation.presence_model import PresenceObservationModel
-from persiste.plugins.assembly.inference.mle import AssemblyMLEInference
+from persiste.plugins.assembly.states.assembly_state import AssemblyState
 
 
 def test_null_recovery(verbose=True):
     """
     Test 1: Null Recovery
-    
+
     Simulate with θ_true = 0
     Fit model
     Check: θ̂ ≈ 0 (no spurious constraints)
@@ -34,85 +36,78 @@ def test_null_recovery(verbose=True):
         print("Test 1: Null Recovery")
         print("=" * 80)
         print("\nSimulate with θ_true = 0, ensure θ̂ ≈ 0")
-    
+
     # Setup
     primitives = ['A', 'B']
     graph = AssemblyGraph(primitives, max_depth=2, min_rate_threshold=1e-4)
     baseline = AssemblyBaseline(kappa=1.0, join_exponent=-0.5, split_exponent=0.3)
     obs_model = PresenceObservationModel(detection_prob=0.9, false_positive_prob=0.01)
     initial_state = AssemblyState.from_parts(['A'], depth=0)
-    
+
     # True parameters: NULL MODEL
     theta_true = {
         'reuse_count': 0.0,
         'depth_change': 0.0,
     }
-    
+
     if verbose:
         print(f"\nTrue parameters (null): {theta_true}")
-    
+
     # Generate data
     constraint_true = AssemblyConstraint(feature_weights=theta_true)
     simulator = GillespieSimulator(graph, baseline, constraint_true, rng=np.random.default_rng(42))
-    
+
     latent_states = simulator.sample_final_states(
         initial_state,
         n_samples=100,
         t_max=30.0,
         burn_in=15.0,
     )
-    
+
     # Simulate observations
     observed_compounds = set()
     for state, prob in latent_states.items():
         for part in state.get_parts_list():
             if np.random.rand() < obs_model.detection_prob * prob:
                 observed_compounds.add(part)
-    
+
     if verbose:
         print(f"Observed: {observed_compounds}")
-    
+
     # Fit
     feature_names = ['reuse_count', 'depth_change']
-    inference = AssemblyMLEInference(
-        graph=graph,
-        baseline=baseline,
-        obs_model=obs_model,
-        initial_state=initial_state,
-        feature_names=feature_names,
-    )
-    
+
     if verbose:
         print("\nFitting...")
-    
-    result = inference.fit(
-        observed_compounds,
+
+    result = fit_assembly_constraints(
+        observed_compounds=observed_compounds,
+        primitives=primitives,
+        mode=InferenceMode.FULL_STOCHASTIC,
+        feature_names=feature_names,
         n_samples=20,
-        t_max=30.0,
-        burn_in=15.0,
-        rng_seed=42,
-        verbose=False,
+        seed=42,
     )
-    
-    theta_mle = result['theta_mle']
-    
+
+    theta_mle = result['theta_hat']
+
     # Check recovery
     errors = {k: abs(theta_mle[k] - theta_true[k]) for k in theta_true.keys()}
     max_error = max(errors.values())
-    
+
     if verbose:
-        print(f"\nResults:")
+        print("\nResults:")
         print(f"  θ_true: {theta_true}")
         print(f"  θ̂:      {theta_mle}")
         print(f"  Errors: {errors}")
         print(f"  Max error: {max_error:.3f}")
-    
+
     # Pass if max error < 0.5 (generous threshold for stochastic sim)
     passed = max_error < 0.5
-    
+
     if verbose:
         print(f"\n{'✓ PASS' if passed else '✗ FAIL'}: Null recovery")
-    
+
     return {
         'test': 'null_recovery',
         'passed': passed,
@@ -126,7 +121,7 @@ def test_null_recovery(verbose=True):
 def test_parameter_recovery(theta_true, verbose=True):
     """
     Test 2: Parameter Recovery
-    
+
     Simulate with known θ_true
     Fit model
     Check: bias, variance, failure modes
@@ -136,76 +131,69 @@ def test_parameter_recovery(theta_true, verbose=True):
         print("Test 2: Parameter Recovery")
         print("=" * 80)
         print(f"\nSimulate with θ_true = {theta_true}")
-    
+
     # Setup
     primitives = ['A', 'B']
     graph = AssemblyGraph(primitives, max_depth=2, min_rate_threshold=1e-4)
     baseline = AssemblyBaseline(kappa=1.0, join_exponent=-0.5, split_exponent=0.3)
     obs_model = PresenceObservationModel(detection_prob=0.9, false_positive_prob=0.01)
     initial_state = AssemblyState.from_parts(['A'], depth=0)
-    
+
     # Generate data
     constraint_true = AssemblyConstraint(feature_weights=theta_true)
     simulator = GillespieSimulator(graph, baseline, constraint_true, rng=np.random.default_rng(42))
-    
+
     latent_states = simulator.sample_final_states(
         initial_state,
         n_samples=100,
         t_max=30.0,
         burn_in=15.0,
     )
-    
+
     # Simulate observations
     observed_compounds = set()
     for state, prob in latent_states.items():
         for part in state.get_parts_list():
             if np.random.rand() < obs_model.detection_prob * prob:
                 observed_compounds.add(part)
-    
+
     if verbose:
         print(f"Observed: {observed_compounds}")
-    
+
     # Fit
     feature_names = list(theta_true.keys())
-    inference = AssemblyMLEInference(
-        graph=graph,
-        baseline=baseline,
-        obs_model=obs_model,
-        initial_state=initial_state,
-        feature_names=feature_names,
-    )
-    
+
     if verbose:
         print("\nFitting...")
-    
-    result = inference.fit(
-        observed_compounds,
+
+    result = fit_assembly_constraints(
+        observed_compounds=observed_compounds,
+        primitives=primitives,
+        mode=InferenceMode.FULL_STOCHASTIC,
+        feature_names=feature_names,
         n_samples=20,
-        t_max=30.0,
-        burn_in=15.0,
-        rng_seed=42,
-        verbose=False,
+        seed=42,
     )
-    
-    theta_mle = result['theta_mle']
-    
+
+    theta_mle = result['theta_hat']
+
     # Check recovery
     errors = {k: abs(theta_mle[k] - theta_true[k]) for k in theta_true.keys()}
     max_error = max(errors.values())
-    
+
     if verbose:
-        print(f"\nResults:")
+        print("\nResults:")
         print(f"  θ_true: {theta_true}")
         print(f"  θ̂:      {theta_mle}")
         print(f"  Errors: {errors}")
         print(f"  Max error: {max_error:.3f}")
-    
+
     # Pass if max error < 1.0 (generous for stochastic sim)
     passed = max_error < 1.0
-    
+
     if verbose:
         print(f"\n{'✓ PASS' if passed else '✗ FAIL'}: Parameter recovery")
-    
+
     return {
         'test': 'parameter_recovery',
         'passed': passed,
@@ -220,20 +208,20 @@ def main():
     print("=" * 80)
     print("Phase 1.8: Validation via Simulation")
     print("=" * 80)
-    
+
     print("\nNON-NEGOTIABLE tests:")
     print("  1. Null recovery: θ_true = 0 → θ̂ ≈ 0")
     print("  2. Parameter recovery: θ_true known → θ̂ ≈ θ_true")
-    
+
     results = []
-    
+
     # ========================================================================
     # Test 1: Null Recovery
     # ========================================================================
     print("\n")
     result1 = test_null_recovery(verbose=True)
     results.append(result1)
-    
+
     # ========================================================================
     # Test 2: Parameter Recovery (Small θ)
     # ========================================================================
@@ -243,7 +231,7 @@ def main():
         verbose=True,
     )
     results.append(result2)
-    
+
     # ========================================================================
     # Test 3: Parameter Recovery (Larger θ)
     # ========================================================================
@@ -253,31 +241,31 @@ def main():
         verbose=True,
     )
     results.append(result3)
-    
+
     # ========================================================================
     # Summary
     # ========================================================================
     print("\n" + "=" * 80)
     print("Validation Summary")
     print("=" * 80)
-    
+
     n_passed = sum(r['passed'] for r in results)
     n_total = len(results)
-    
+
     print(f"\nTests passed: {n_passed}/{n_total}")
-    
+
     for r in results:
         status = "✓ PASS" if r['passed'] else "✗ FAIL"
         print(f"  {status}: {r['test']}")
         print(f"    Max error: {r['max_error']:.3f}")
-    
+
     # ========================================================================
     # Diagnosis
     # ========================================================================
     print("\n" + "=" * 80)
     print("Diagnosis")
     print("=" * 80)
-    
+
     if n_passed == n_total:
         print("\n✓ All tests passed!")
         print("\nThe system is working correctly:")
@@ -292,28 +280,28 @@ def main():
         print("  3. Weak identifiability (constraints don't affect observations enough)")
         print("  4. Optimization stuck in local minimum (try different initial values)")
         print("  5. Model misspecification (observation model doesn't match data)")
-        
+
         print("\nNext steps:")
         print("  - Increase n_samples in simulation")
         print("  - Run multiple replicates")
         print("  - Check if θ actually affects P(observations)")
         print("  - Consider richer observation model")
-    
+
     print("\n" + "=" * 80)
     print("Phase 1.8 Complete")
     print("=" * 80)
-    
+
     print("\nKey findings:")
     print("  ✓ Validation framework implemented")
     print("  ✓ Tests reveal identifiability issues")
     print("  ✓ Null recovery working (no spurious constraints)")
     print("  ⚠ Parameter recovery challenging (expected for simple model)")
-    
+
     print("\nThis is honest science:")
     print("  - We know what we can and can't recover")
     print("  - We're not hallucinating structure")
     print("  - We understand the limitations")
-    
+
     print("\nTo improve:")
     print("  1. Richer observations (not just presence/absence)")
     print("  2. More simulation samples")

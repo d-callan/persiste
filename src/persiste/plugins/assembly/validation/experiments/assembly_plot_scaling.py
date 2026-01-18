@@ -3,11 +3,11 @@ Plot scaling curves from assembly_scaling_results.json
 """
 
 import json
+
 import matplotlib.pyplot as plt
-import numpy as np
 
 # Load results
-with open('assembly_scaling_results.json', 'r') as f:
+with open('assembly_scaling_results.json') as f:
     data = json.load(f)
 
 results = data['results']
@@ -15,7 +15,7 @@ minimal = data['minimal_requirements']
 
 # Create figure with 2x2 subplots
 fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-fig.suptitle('Scaling Curves: Minimal Data Requirements for Inference', fontsize=14, fontweight='bold')
+fig.suptitle('Assembly Scaling Curves', fontsize=14, fontweight='bold')
 
 # ============================================================================
 # Plot 1: Number of Primitives
@@ -36,7 +36,7 @@ ax.set_title('(A) Number of Primitives', fontsize=12, fontweight='bold')
 
 # Add runtime on secondary axis
 ax2 = ax.twinx()
-ax2.plot(x, y_runtime, 's--', linewidth=1.5, markersize=6, color='#A23B72', alpha=0.7, label='Runtime')
+ax2.plot(x, y_runtime, 's--', lw=1.5, ms=6, color='#A23B72', alpha=0.7, label='Runtime')
 ax2.set_ylabel('Runtime (s)', fontsize=11, color='#A23B72')
 ax2.tick_params(axis='y', labelcolor='#A23B72')
 
@@ -63,7 +63,7 @@ ax.grid(True, alpha=0.3)
 ax.set_title('(B) Max Depth', fontsize=12, fontweight='bold')
 
 ax2 = ax.twinx()
-ax2.plot(x, y_runtime, 's--', linewidth=1.5, markersize=6, color='#A23B72', alpha=0.7, label='Runtime')
+ax2.plot(x, y_runtime, 's--', lw=1.5, ms=6, color='#A23B72', alpha=0.7, label='Runtime')
 ax2.set_ylabel('Runtime (s)', fontsize=11, color='#A23B72')
 ax2.tick_params(axis='y', labelcolor='#A23B72')
 
@@ -89,7 +89,7 @@ ax.grid(True, alpha=0.3)
 ax.set_title('(C) Sample Size', fontsize=12, fontweight='bold')
 
 ax2 = ax.twinx()
-ax2.plot(x, y_runtime, 's--', linewidth=1.5, markersize=6, color='#A23B72', alpha=0.7, label='Runtime')
+ax2.plot(x, y_runtime, 's--', lw=1.5, ms=6, color='#A23B72', alpha=0.7, label='Runtime')
 ax2.set_ylabel('Runtime (s)', fontsize=11, color='#A23B72')
 ax2.tick_params(axis='y', labelcolor='#A23B72')
 
@@ -115,7 +115,7 @@ ax.grid(True, alpha=0.3)
 ax.set_title('(D) Simulation Time', fontsize=12, fontweight='bold')
 
 ax2 = ax.twinx()
-ax2.plot(x, y_runtime, 's--', linewidth=1.5, markersize=6, color='#A23B72', alpha=0.7, label='Runtime')
+ax2.plot(x, y_runtime, 's--', lw=1.5, ms=6, color='#A23B72', alpha=0.7, label='Runtime')
 ax2.set_ylabel('Runtime (s)', fontsize=11, color='#A23B72')
 ax2.tick_params(axis='y', labelcolor='#A23B72')
 
@@ -146,13 +146,13 @@ Recommended Configuration:
 Key Findings:
   1. Sample size has strongest effect on identifiability
      (range: 29 → 167 as samples increase 20 → 200)
-  
+
   2. Depth increases identifiability but is computationally expensive
      (range: 38 → 119 as depth increases 3 → 7)
-  
+
   3. More primitives help moderately
      (range: 49 → 88 as primitives increase 3 → 7)
-  
+
   4. Simulation time shows diminishing returns after t=20
      (range peaks at 111 for t=20, then plateaus)
 
@@ -169,7 +169,7 @@ Computational Cost:
   • Increasing primitives to 7: ~9 seconds (+29%)
 """
 
-ax.text(0.1, 0.95, summary_text, transform=ax.transAxes, 
+ax.text(0.1, 0.95, summary_text, transform=ax.transAxes,
         fontsize=11, verticalalignment='top', family='monospace',
         bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
 

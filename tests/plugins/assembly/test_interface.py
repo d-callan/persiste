@@ -66,5 +66,5 @@ def test_fit_presence_observations_returns_constraint_result() -> None:
     )
 
     assert isinstance(result, ConstraintResult)
-    assert "reuse_count" in result.parameters
+    assert "reuse_count" in result.parameters.get("theta", {})
     assert np.isfinite(result.log_likelihood)

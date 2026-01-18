@@ -11,11 +11,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from persiste.plugins.assembly.diagnostics.artifacts import InferenceArtifacts
-from persiste.plugins.assembly.diagnostics.suite import (
-    CachedPathData,
-    null_resampling,
-)
+from persiste.plugins.assembly.diagnostics.suite import null_resampling
 from persiste.plugins.assembly.recipes.base import DiagnosticReport
 
 
@@ -68,8 +64,7 @@ class NullResamplingReport(DiagnosticReport):
 
 
 def null_resampling_diagnostic(
-    artifacts: InferenceArtifacts,
-    cache: CachedPathData,
+    inference_result: dict,
     n_resamples: int = 1000,
 ) -> NullResamplingReport:
     """
@@ -79,20 +74,25 @@ def null_resampling_diagnostic(
     resampling the null distribution via importance weights.
 
     Args:
-        artifacts: InferenceArtifacts from fit_assembly_constraints
-        cache: CachedPathData from inference
+        inference_result: Result dict from fit_assembly_constraints
+            (must contain 'artifacts' and 'cache')
         n_resamples: Number of bootstrap resamples (default: 1000)
 
     Returns:
         NullResamplingReport with p-value and interpretation
 
     Example:
-        >>> from persiste.plugins.assembly.recipes import null_resampling_diagnostic
-        >>> report = null_resampling_diagnostic(artifacts, cache)
+        >>> result = fit_assembly_constraints(...)
+        >>> report = null_resampling_diagnostic(result)
         >>> report.print_summary()
-        >>> if report.p_value < 0.05:
-        ...     print("Constraints are significant!")
     """
+    artifacts = inference_result.get("artifacts")
+    cache = inference_result.get("cache")
+
+    if artifacts is None or cache is None:
+        msg = "Inference result must contain 'artifacts' and 'cache' for this diagnostic."
+        raise ValueError(msg)
+
     # Use existing implementation from diagnostics/suite.py
     result = null_resampling(artifacts, cache, n_resamples)
 

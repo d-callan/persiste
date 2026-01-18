@@ -24,47 +24,36 @@
 **Mathematical formulation:**
 
 ```
-θ*, φ* = argmax_θ,φ [ log P(D | baseline(φ), constraints(θ)) + log P(φ) - λ||θ||² ]
+θ*, φ* = argmax_θ,φ [ log P(D | baseline(φ), constraints(θ)) - λ||θ|| ]
 ```
 
 Where:
 - `D` = observed data (frequency counts)
 - `θ` = constraint parameters
-- `φ` = baseline parameters
-- `P(φ)` = baseline prior (Gaussian)
+- `φ` = baseline parameters (e.g., join_exponent)
 - `λ` = regularization strength
 
 **Why it works:**
 
 1. **Baseline absorbs baseline errors** - φ adjusts to fit baseline-specific patterns
 2. **Constraints explain residuals** - θ only captures constraint-specific deviations
-3. **Prior regularizes baseline** - prevents overfitting baseline to noise
-4. **L2 regularizes constraints** - prevents spurious constraints
+3. **L1/L2 regularizes constraints** - prevents spurious constraints from noisy data
 
 **Implementation:**
 
+The `fit_assembly_constraints` entry point in `cli.py` manages this joint optimization. It uses `CachedAssemblyObservationModel` to efficiently handle the stochastic simulations required for likelihood evaluation via importance sampling.
+
 ```python
-def neg_log_likelihood(params):
-    # Split parameters
-    theta = params[:n_constraint]
-    phi = params[n_constraint:]
+# Conceptual loop managed by fit_assembly_constraints
+while not converged:
+    # 1. Propose theta and phi
+    # 2. Get latent states (CachedModel handles IS reweighting)
+    latent_states = cached_model.get_latent_states(constraint)
     
-    # Create models
-    constraint = AssemblyConstraint(theta)
-    baseline = baseline_family.create_baseline(phi)
+    # 3. Compute flux likelihood
+    ll = compute_observation_ll(latent_states, observed, primitives, ...)
     
-    # Simulate latent states
-    simulator = GillespieSimulator(graph, baseline, constraint)
-    latent_states = simulator.sample_final_states(...)
-    
-    # Likelihood
-    ll = obs_model.compute_log_likelihood(observed, latent_states)
-    
-    # Priors + regularization
-    baseline_prior = baseline_family.log_prior(phi)
-    l2_penalty = regularization * np.sum(theta**2)
-    
-    return -(ll + baseline_prior) + l2_penalty
+    # 4. Step optimizer (Hill climbing with safety thresholds)
 ```
 
 ### 2. Automatic Null Testing
@@ -97,7 +86,7 @@ def neg_log_likelihood(params):
 
 **Method:**
 
-1. Fix parameter at grid values: `θ_i ∈ [-2, 2]`
+1. Fix parameter at grid values: `θ_i ∈ [-4, 4]`
 2. Optimize other parameters: `θ_{-i}*, φ* = argmax P(D | θ_i, θ_{-i}, φ)`
 3. Record likelihood: `LL(θ_i)`
 4. Compute range: `max(LL) - min(LL)`
@@ -386,11 +375,11 @@ For typical problems: λ = 0.1 is near-optimal.
 - ⚠️ Baseline misspecification (20% error → false positives)
 
 **Mitigation:**
-- Use joint inference (SimpleBaselineFamily)
+- Use joint inference (phi adjustment in CLI)
 - Use conservative thresholds (Δ LL > 10)
 - Validate with baseline sensitivity analysis
 
-**See:** `examples/assembly_robustness_tests.py`
+**See:** `validation/experiments/assembly_validation.py`
 
 ---
 
@@ -475,20 +464,19 @@ rate(s → s') = baseline_rate(s → s') × exp(θ · features(s'))
 **Join rate:**
 
 ```
-λ_join(s1, s2) = κ × n^α × exp(-β × depth_diff)
+λ_join(s1, s2) = κ × depth^α
 ```
 
 **Split rate:**
 
 ```
-λ split(s → s1, s2) = κ × n^γ
+λ split(s → s1, s2) = κ × depth^γ
 ```
 
 Where:
 - `κ` = rate constant
 - `α` = join exponent (typically < 0)
 - `γ` = split exponent (typically > 0)
-- `n` = total number of parts
 
 ---
 

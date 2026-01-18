@@ -90,15 +90,19 @@ class AssemblyConstraint:
 ### ✅ Good: Providing Vocabulary
 ```python
 # DO THIS
-class AssemblyConstraint:
-    def __init__(self, feature_weights=None):
-        self.feature_weights = feature_weights or {}  # User decides
+from persiste.core.constraints import ConstraintModel
+
+class AssemblyConstraint(ConstraintModel):
+    def __init__(self, feature_weights=None, **kwargs):
+        # standard initialization with PERSISTE core
+        super().__init__(parameters={"theta": feature_weights or {}}, **kwargs)
+        self.feature_weights = self.parameters["theta"]
         self.feature_extractor = AssemblyFeatureExtractor()
     
-    def constraint_contribution(self, source, target):
-        features = self.feature_extractor.extract_features(source, target)
+    def constraint_contribution(self, source, target, transition_type):
+        features = self.feature_extractor.extract_features(source, target, transition_type)
         return sum(self.feature_weights.get(f, 0.0) * v 
-                   for f, v in features.items())
+                   for f, v in features.to_dict().items())
 ```
 
 **Benefit:** This is science. You're testing hypotheses.
@@ -111,23 +115,25 @@ With this architecture, you can ask:
 
 ### 1. Does reuse bias appear in this system?
 ```python
-null = AssemblyConstraint.null_model()
-reuse = AssemblyConstraint.reuse_only()
+from persiste.plugins.assembly.cli import fit_assembly_constraints
 
-ℓ_null = fit(data, null)
-ℓ_reuse = fit(data, reuse)
+# Fit multiple models via CLI or interface
+result_null = fit_assembly_constraints(data, primitives, feature_names=[])
+result_reuse = fit_assembly_constraints(data, primitives, feature_names=['reuse_count'])
 
-LRT = 2 × (ℓ_reuse - ℓ_null)  # ~ χ²(1)
-p_value = chi2.sf(LRT, df=1)
+LRT = 2 * (result_reuse['stochastic_ll'] - result_null['stochastic_ll'])
 ```
 
 ### 2. Which constraints emerge under inference?
 ```python
-# Start with all features, weak regularization
-θ̂ = fit_with_regularization(data, all_features)
+# Use standard analysis recipe
+from persiste.plugins.assembly.recipes import run_standard_analysis
+
+result = run_standard_analysis(data, primitives)
+theta_hat = result['theta_hat']
 
 # See which weights are non-zero
-significant = {f: w for f, w in θ̂.items() if abs(w) > threshold}
+significant = {f: w for f, w in theta_hat.items() if abs(w) > 0.5}
 ```
 
 ### 3. Do constraints strengthen over time?
@@ -365,14 +371,12 @@ src/persiste/plugins/assembly/
 │   ├── __init__.py
 │   └── assembly_features.py       # Layer 1 (mechanics)
 ├── constraints/
-│   └── assembly_constraint.py     # Layer 2 (theories) - REFACTORED
-└── ...
-
-examples/
-└── assembly_model_comparison.py   # Demonstrates three-layer architecture
-
-docs/
-└── ASSEMBLY_ARCHITECTURE.md       # This file
+│   └── assembly_constraint.py     # Layer 2 (theories) - STANDARDIZED
+├── recipes/
+│   └── standard_analysis.py       # Official analysis entry point
+└── validation/
+    └── experiments/
+        └── assembly_model_comparison.py   # Architecture demo
 ```
 
 ---

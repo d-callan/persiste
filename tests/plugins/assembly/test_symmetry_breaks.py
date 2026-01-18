@@ -8,11 +8,15 @@ Validates that:
 4. Screening detects symmetry breaks when present
 """
 
-from persiste.plugins.assembly.baselines.assembly_baseline import AssemblyBaseline
+import numpy as np
+
+from persiste.plugins.assembly.baselines.assembly_baseline import (
+    AssemblyBaseline,
+    TransitionType,
+)
 from persiste.plugins.assembly.constraints.assembly_constraint import AssemblyConstraint
 from persiste.plugins.assembly.features.assembly_features import (
     AssemblyFeatureExtractor,
-    TransitionType,
 )
 from persiste.plugins.assembly.graphs.assembly_graph import AssemblyGraph
 from persiste.plugins.assembly.states.assembly_state import AssemblyState
@@ -35,7 +39,8 @@ class TestSymmetryBreakFeatureExtraction:
         )
 
         # depth_gate_reuse should be set (reuse=1, depth=4 >= threshold=3)
-        assert features.depth_gate_reuse > 0, "depth_gate_reuse should activate at depth >= threshold"
+        msg = "depth_gate_reuse should activate at depth >= threshold"
+        assert features.depth_gate_reuse > 0, msg
 
     def test_depth_gate_reuse_below_threshold(self):
         """Symmetry Break A: depth-gated reuse feature does not activate below threshold."""
@@ -50,7 +55,8 @@ class TestSymmetryBreakFeatureExtraction:
         )
 
         # depth_gate_reuse should be 0 (depth=2 < threshold=3)
-        assert features.depth_gate_reuse == 0, "depth_gate_reuse should not activate below threshold"
+        msg = "depth_gate_reuse should not activate below threshold"
+        assert features.depth_gate_reuse == 0, msg
 
     def test_same_class_reuse_feature_extraction(self):
         """Symmetry Break B: same-class reuse feature activates for intra-class reuse."""
@@ -65,7 +71,8 @@ class TestSymmetryBreakFeatureExtraction:
         features = extractor.extract_features(source, target, TransitionType.JOIN)
 
         # same_class_reuse should be set
-        assert features.same_class_reuse > 0, "same_class_reuse should activate for intra-class reuse"
+        msg = "same_class_reuse should activate for intra-class reuse"
+        assert features.same_class_reuse > 0, msg
         assert features.cross_class_reuse == 0, "cross_class_reuse should not activate"
 
     def test_cross_class_reuse_feature_extraction(self):
@@ -81,7 +88,8 @@ class TestSymmetryBreakFeatureExtraction:
         features = extractor.extract_features(source, target, TransitionType.JOIN)
 
         # cross_class_reuse should be set
-        assert features.cross_class_reuse > 0, "cross_class_reuse should activate for inter-class reuse"
+        msg = "cross_class_reuse should activate for inter-class reuse"
+        assert features.cross_class_reuse > 0, msg
         assert features.same_class_reuse == 0, "same_class_reuse should not activate"
 
     def test_founder_reuse_feature_extraction(self):
@@ -172,44 +180,74 @@ class TestSymmetryBreakConstraints:
 class TestSymmetryBreakRateModulation:
     """Test that symmetry break features modulate transition rates."""
 
-    def test_depth_gate_reuse_increases_join_rate(self):
-        """Depth-gated reuse with positive weight should increase join rates."""
+    def test_depth_gate_reuse_modulates_rates(self):
+        """Depth-gated reuse with positive weight should modulate join rates."""
         primitives = ["A", "B"]
-        graph = AssemblyGraph(primitives, max_depth=5, min_rate_threshold=0.0)
         baseline = AssemblyBaseline(kappa=1.0)
 
-        # Constraint with positive depth_gate_reuse weight
+        # 1. State at depth 3 (A,B,A)
+        state = AssemblyState.from_parts(["A", "B", "A"], depth=3)
+
+        # 2. Constraint with positive depth_gate_reuse weight
+        # Threshold=2 means reuse at depth >= 2 is boosted.
         constraint = AssemblyConstraint(
-            feature_weights={"depth_gate_reuse": 1.0},
+            feature_weights={"depth_gate_reuse": 2.0},
             depth_gate_threshold=2,
         )
 
-        state = AssemblyState.from_parts(["A"], depth=0)
-        neighbors_with_constraint = graph.get_neighbors(state, baseline, constraint)
+        # Use a fresh graph to avoid cache interference
+        graph_constrained = AssemblyGraph(primitives, max_depth=5, min_rate_threshold=0.0)
+        neighbors_constrained = graph_constrained.get_neighbors(state, baseline, constraint)
 
-        # Compare to null constraint
+        # 3. Compare to null constraint using a fresh graph
         null_constraint = AssemblyConstraint()
-        neighbors_null = graph.get_neighbors(state, baseline, null_constraint)
+        graph_null = AssemblyGraph(primitives, max_depth=5, min_rate_threshold=0.0)
+        neighbors_null = graph_null.get_neighbors(state, baseline, null_constraint)
 
-        # Rates should differ (constraint has effect)
-        assert len(neighbors_with_constraint) == len(neighbors_null)
+        # 4. Rates should differ for transitions that involve reuse at depth >= 2
+        # get_neighbors returns list of (neighbor_state, rate, type)
+        max_rate_constrained = max(n[1] for n in neighbors_constrained)
+        max_rate_null = max(n[1] for n in neighbors_null)
 
-    def test_founder_reuse_modulates_rates(self):
-        """Founder reuse with weight should modulate transition rates."""
+        msg = (
+            f"Constrained rate ({max_rate_constrained:.2f}) "
+            f"should be boosted over null ({max_rate_null:.2f})"
+        )
+        assert max_rate_constrained > max_rate_null, msg
+
+    def test_reuse_count_modulates_rates(self):
+        """Standard reuse_count with weight should modulate transition rates."""
         primitives = ["A", "B"]
-        graph = AssemblyGraph(primitives, max_depth=5, min_rate_threshold=0.0)
         baseline = AssemblyBaseline(kappa=1.0)
 
+        # 1. Source state (A+B)
+        source = AssemblyState.from_parts(["A", "B"], depth=1)
+
+        # 2. Constraint favoring reuse
+        weight = 2.0
         constraint = AssemblyConstraint(
-            feature_weights={"founder_reuse": 2.0},
-            founder_rank_threshold=2,
+            feature_weights={"reuse_count": weight}
         )
 
-        state = AssemblyState.from_parts(["A"], depth=0)
-        neighbors = graph.get_neighbors(state, baseline, constraint)
+        # Use fresh graphs to avoid neighbor cache interference
+        graph_constrained = AssemblyGraph(primitives, max_depth=5, min_rate_threshold=0.0)
+        neighbors_constrained = graph_constrained.get_neighbors(source, baseline, constraint)
 
-        # Should return valid neighbors
-        assert len(neighbors) > 0
+        graph_null = AssemblyGraph(primitives, max_depth=5, min_rate_threshold=0.0)
+        null_constraint = AssemblyConstraint()
+        neighbors_null = graph_null.get_neighbors(source, baseline, null_constraint)
+
+        # 3. Verify that rates are modulated for transitions involving reuse
+        found_boost = False
+        for i, (target, rate, ttype) in enumerate(neighbors_constrained):
+            null_rate = neighbors_null[i][1]
+            if ttype == TransitionType.JOIN:
+                expected_boosted = null_rate * np.exp(weight)
+                if np.isclose(rate, expected_boosted, rtol=1e-3):
+                    found_boost = True
+                    break
+
+        assert found_boost, "No JOIN transitions were boosted by the reuse constraint"
 
 
 class TestScreeningWithSymmetryBreaks:

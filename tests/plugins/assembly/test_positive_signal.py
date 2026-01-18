@@ -15,12 +15,12 @@ Never compare two θ-dependent summaries, assert seed-to-seed variability, or as
 import numpy as np
 
 from persiste.plugins.assembly.baselines.assembly_baseline import AssemblyBaseline
-from persiste.plugins.assembly.cli import fit_assembly_constraints, InferenceMode
+from persiste.plugins.assembly.cli import InferenceMode, fit_assembly_constraints
 from persiste.plugins.assembly.constraints.assembly_constraint import AssemblyConstraint
 from persiste.plugins.assembly.likelihood import compute_observation_ll
 from persiste.plugins.assembly.observation.cached_observation import (
-    CachedAssemblyObservationModel,
     CacheConfig,
+    CachedAssemblyObservationModel,
     SimulationSettings,
 )
 from persiste.plugins.assembly.states.assembly_state import AssemblyState
@@ -200,49 +200,39 @@ class TestLikelihoodDiscrimination:
 class TestThetaRecovery:
     """Test that optimizer can recover theta from simulated data."""
 
-    def test_optimizer_returns_valid_theta(self):
-        """Optimizer should return a valid theta (dict, possibly empty)."""
+    def test_optimizer_recovers_significant_signal(self):
+        """
+        Specification:
+        When data are generated with a strong constraint (reuse_count=2.0),
+        the optimizer should recover a positive theta and a significant Delta LL (>5.0).
+        """
+        theta_true = {"reuse_count": 2.0}
+        # Generate 'observed' data using a fixed seed and known theta
+        data = simulate_assembly_data(theta=theta_true, n_samples=100, seed=42)
+        observed = data["observed_compounds"]
+
         result = fit_assembly_constraints(
-            observed_compounds={"A", "B"},
+            observed_compounds=observed,
             primitives=["A", "B"],
             mode=InferenceMode.FULL_STOCHASTIC,
             feature_names=["reuse_count"],
             n_samples=100,
-            t_max=20.0,
-            burn_in=5.0,
-            max_depth=7,
+            t_max=30.0,
+            burn_in=10.0,
+            max_depth=5,
             seed=42,
         )
 
         theta_hat = result.get("theta_hat", {})
-
-        # theta_hat should be a dict (possibly empty if signal too weak)
-        assert isinstance(theta_hat, dict), (
-            f"Optimizer should return dict: theta_hat={theta_hat}"
-        )
-
-    def test_optimizer_not_extreme(self):
-        """Optimizer should not find extreme theta values."""
-        result = fit_assembly_constraints(
-            observed_compounds={"A", "B"},
-            primitives=["A", "B"],
-            mode=InferenceMode.FULL_STOCHASTIC,
-            feature_names=["reuse_count"],
-            n_samples=100,
-            t_max=20.0,
-            burn_in=5.0,
-            max_depth=7,
-            seed=42,
-        )
-
-        theta_hat = result.get("theta_hat", {})
+        delta_ll = result.get("stochastic_delta_ll", 0.0)
         reuse_hat = theta_hat.get("reuse_count", 0.0)
 
-        # Should not find extreme values
-        assert abs(reuse_hat) < 10.0, (
-            f"Optimizer should not find extreme theta: "
-            f"reuse_count={reuse_hat}"
-        )
+        # 1. Delta LL should be significant
+        assert delta_ll > 5.0, f"Expected significant Delta LL (>5), got {delta_ll:.2f}"
+
+        # 2. Recovered theta should be positive and in the right ballpark
+        assert reuse_hat > 0.5, f"Expected recovered reuse_count > 0.5, got {reuse_hat:.2f}"
+        assert reuse_hat < 5.0, f"Recovered theta is unexpectedly extreme: {reuse_hat:.2f}"
 
 
 class TestFeatureExtractionUnderConstraints:

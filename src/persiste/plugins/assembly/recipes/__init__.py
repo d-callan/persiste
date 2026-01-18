@@ -23,6 +23,7 @@ from persiste.plugins.assembly.recipes.recipe_2_baseline_perturbation import (
     BaselinePerturbationReport,
     baseline_perturbation_sensitivity,
 )
+from persiste.plugins.assembly.recipes.standard_analysis import run_standard_analysis
 
 __all__ = [
     "DiagnosticReport",
@@ -32,4 +33,5 @@ __all__ = [
     "profile_likelihood_sweep",
     "BaselinePerturbationReport",
     "baseline_perturbation_sensitivity",
+    "run_standard_analysis",
 ]

@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-
 import persiste_rust
 
 PRIMITIVE_TYPES = ["hydro", "lipid", "metal", "amine", "silicate"]

@@ -8,12 +8,9 @@ These tests cover:
 """
 
 import json
-import tempfile
-from pathlib import Path
-
-import pytest
 
 import persiste_rust
+import pytest
 
 from persiste.plugins.assembly.baselines.assembly_baseline import AssemblyBaseline
 from persiste.plugins.assembly.cli import InferenceMode, fit_assembly_constraints
@@ -21,8 +18,8 @@ from persiste.plugins.assembly.constraints.assembly_constraint import AssemblyCo
 from persiste.plugins.assembly.diagnostics.artifacts import CachedPathData, InferenceArtifacts
 from persiste.plugins.assembly.diagnostics.suite import profile_likelihood
 from persiste.plugins.assembly.observation.cached_observation import (
-    CachedAssemblyObservationModel,
     CacheConfig,
+    CachedAssemblyObservationModel,
     SimulationSettings,
 )
 from persiste.plugins.assembly.screening.screening import (
@@ -42,7 +39,7 @@ class TestEdgeCases:
     def test_topology_guard_at_threshold(self):
         """
         Edge case: Δθ exactly at threshold.
-        
+
         Behavior: > threshold triggers (strictly greater than), <= threshold passes.
         """
         threshold = 2.0
@@ -78,7 +75,7 @@ class TestEdgeCases:
     def test_extreme_theta_shift_triggers_resim(self):
         """
         Stress test: θ far outside trust region.
-        
+
         Expected: ESS collapses, resimulation occurs, weights remain finite.
         """
         result = persiste_rust.simulate_assembly_trajectories(
@@ -118,7 +115,7 @@ class TestEdgeCases:
     def test_observation_model_mapping(self):
         """
         Verify latent → observed correctness.
-        
+
         With known latent states and detection probabilities,
         observed probabilities should match expected formula.
         """
@@ -130,10 +127,10 @@ class TestEdgeCases:
 
         # Simple observation model: compound detected if state present
         # P(observe compound) = sum over states containing compound
-        
+
         # For this test, assume state 1 contains compound "A", state 2 contains "B"
         # Then P(observe "A") ≈ 0.7, P(observe "B") ≈ 0.3
-        
+
         # This is a placeholder - full implementation would need actual observation model
         assert sum(latent_states.values()) == 1.0, "Latent probabilities should sum to 1"
         assert all(0 <= p <= 1 for p in latent_states.values()), "Valid probabilities"
@@ -146,7 +143,7 @@ class TestIntegration:
     def test_screen_plus_stochastic_refine(self):
         """
         Verify screening → stochastic refinement integration.
-        
+
         Only top-K from screening should be refined stochastically.
         """
         result = fit_assembly_constraints(
@@ -161,7 +158,7 @@ class TestIntegration:
 
         assert result["mode"] == "screen-and-refine"
         assert len(result["screening_results"]) > 0
-        
+
         # Should have run stochastic refinement (cache stats present)
         assert result["cache_stats"] is not None
         assert result["cache_stats"]["initialized"]
@@ -170,7 +167,7 @@ class TestIntegration:
     def test_cache_reuse_after_topology_guard(self):
         """
         Integration: cache + topology checks.
-        
+
         Small Δθ reuses cache, large Δθ triggers resimulation.
         """
         baseline = AssemblyBaseline()
@@ -218,7 +215,7 @@ class TestStress:
     def test_profile_likelihood_ci_convergence(self, n_trajectories):
         """
         Diagnostics sensitivity: CI width decreases with more trajectories.
-        
+
         MLE should remain inside CI.
         """
         artifacts = InferenceArtifacts(
@@ -242,14 +239,14 @@ class TestStress:
 
         # CI width
         ci_width = result.confidence_interval[1] - result.confidence_interval[0]
-        
+
         # Store for comparison (in real test, would compare across parametrize runs)
         assert ci_width > 0, "CI should have positive width"
 
     def test_cli_advanced_overrides(self, tmp_path):
         """
         CLI default override correctness.
-        
+
         Custom trust_radius, ess_threshold, screen_budget should be applied.
         """
         output_file = tmp_path / "result.json"
@@ -279,7 +276,7 @@ class TestStress:
     def test_extreme_false_positive_detection(self):
         """
         Observation robustness: all latent states absent, false_pos > 0.
-        
+
         Observed counts should reflect false positives accurately.
         """
         # Latent distribution: all states have zero probability
@@ -287,7 +284,7 @@ class TestStress:
 
         # With false positive rate, we'd still observe some detections
         # This is a placeholder for when observation model is fully integrated
-        
+
         # For now, just verify probabilities are valid
         assert all(p >= 0 for p in latent_states.values())
         assert sum(latent_states.values()) == 0.0
@@ -295,7 +292,7 @@ class TestStress:
     def test_screening_edge_budget(self):
         """
         Edge case: budget smaller than top-K or fewer candidates than budget.
-        
+
         Adaptive refinement should not crash.
         """
         baseline = AssemblyBaseline()

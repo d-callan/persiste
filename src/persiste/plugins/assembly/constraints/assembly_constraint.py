@@ -10,13 +10,13 @@ Constraint encodes:
 
 import numpy as np
 
-from persiste.core.constraint_utils import MultiplicativeConstraint
+from persiste.core.constraints import ConstraintModel, ParameterSpace
 from persiste.plugins.assembly.baselines.assembly_baseline import TransitionType
 from persiste.plugins.assembly.features.assembly_features import AssemblyFeatureExtractor
 from persiste.plugins.assembly.states.assembly_state import AssemblyState
 
 
-class AssemblyConstraint(MultiplicativeConstraint):
+class AssemblyConstraint(ConstraintModel):
     """
     Constraint model for assembly theory (Layer 2 - theories).
 
@@ -53,33 +53,17 @@ class AssemblyConstraint(MultiplicativeConstraint):
             depth_gate_threshold: Depth threshold for Symmetry Break A
             primitive_classes: Mapping primitive -> class for Symmetry Break B
             founder_rank_threshold: Rank threshold for Symmetry Break C
-
-        Examples:
-            # Null model (no constraints)
-            constraint = AssemblyConstraint()
-
-            # Reuse-only model
-            constraint = AssemblyConstraint({'reuse_count': 1.0})
-
-            # With Symmetry Break A (depth-gated reuse)
-            constraint = AssemblyConstraint(
-                {'depth_gate_reuse': 0.5},
-                depth_gate_threshold=3
-            )
-
-            # With Symmetry Break B (context-class reuse)
-            constraint = AssemblyConstraint(
-                {'same_class_reuse': 0.3, 'cross_class_reuse': -0.2},
-                primitive_classes={'A': 'class1', 'B': 'class1', 'C': 'class2'}
-            )
-
-            # With Symmetry Break C (founder bias)
-            constraint = AssemblyConstraint(
-                {'founder_reuse': 0.4},
-                founder_rank_threshold=2
-            )
         """
-        self.feature_weights = feature_weights if feature_weights is not None else {}
+        # Call core ConstraintModel __init__ with placeholder values
+        # Assembly models don't use the full core state space enumeration yet.
+        super().__init__(
+            states=None,  # type: ignore
+            baseline=None,  # type: ignore
+            graph=None,  # type: ignore
+            parameters={"theta": feature_weights if feature_weights is not None else {}},
+            allow_facilitation=False,  # Assembly theory defaults to suppression only
+        )
+        self.feature_weights = self.parameters["theta"]
         self.feature_extractor = (
             feature_extractor
             if feature_extractor is not None
@@ -89,8 +73,6 @@ class AssemblyConstraint(MultiplicativeConstraint):
                 founder_rank_threshold=founder_rank_threshold,
             )
         )
-        # Assembly constraints never allow facilitation (rates remain non-negative).
-        self.allow_facilitation = False
 
     def constraint_contribution(
         self,
@@ -144,14 +126,16 @@ class AssemblyConstraint(MultiplicativeConstraint):
         """
         return self.feature_weights.copy()
 
-    def set_parameters(self, params: dict[str, float]):
+    def set_parameters(self, **params):
         """
-        Set constraint parameters θ (feature weights).
+        Set constraint parameters (feature weights).
 
         Args:
-            params: Dict of feature_name -> weight
+            **params: Parameters dict, expected to contain 'theta'.
         """
-        self.feature_weights = params.copy()
+        super().set_parameters(**params)
+        if "theta" in params:
+            self.feature_weights = self.parameters["theta"]
 
     def __str__(self) -> str:
         if not self.feature_weights:
@@ -209,39 +193,37 @@ class AssemblyConstraint(MultiplicativeConstraint):
 
     def pack(self, parameters: dict | None = None) -> np.ndarray:
         """
-        Pack feature weights into flat vector.
-
-        Required for scipy.optimize integration.
+        Pack feature weights into flat vector for optimization.
 
         Args:
-            parameters: Optional parameters dict (uses self.feature_weights if None)
+            parameters: Optional parameters dict (uses self.parameters if None).
+                Can be nested {"theta": {...}} or a flat feature weight dict.
 
         Returns:
             Flat numpy array of weights
         """
-        params = parameters if parameters is not None else self.feature_weights
+        params = parameters if parameters is not None else self.parameters
+        theta = params.get("theta", params)
 
-        if not params:
-            return np.array([])
+        if not theta or not isinstance(theta, dict):
+            return np.array([], dtype=float)
 
         # Sort keys for reproducibility
-        keys = sorted(params.keys())
-        return np.array([params[k] for k in keys])
+        keys = sorted(theta.keys())
+        return np.array([theta[k] for k in keys], dtype=float)
 
     def unpack(self, vector: np.ndarray) -> dict:
         """
         Unpack flat vector into feature weights dict.
 
-        Inverse of pack().
-
         Args:
             vector: Flat numpy array
 
         Returns:
-            Dict of feature_name -> weight
+            Dict of {"theta": {feature_name: weight}}
         """
         if len(vector) == 0:
-            return {}
+            return {"theta": {}}
 
         # Use current feature_weights keys for ordering
         keys = sorted(self.feature_weights.keys())
@@ -251,66 +233,71 @@ class AssemblyConstraint(MultiplicativeConstraint):
                 f"Vector length {len(vector)} != expected {len(keys)}. Expected features: {keys}"
             )
 
-        return {k: float(vector[i]) for i, k in enumerate(keys)}
+        return {"theta": {k: float(vector[i]) for i, k in enumerate(keys)}}
+
+    def get_parameter_space(self, parameters: dict | None = None) -> ParameterSpace:
+        """
+        Describe the structural parameter layout.
+
+        Args:
+            parameters: Optional parameters dict.
+
+        Returns:
+            ParameterSpace with feature names as keys and 0.0 as neutral.
+        """
+        params = parameters if parameters is not None else self.parameters
+        theta = params.get("theta", params)
+        if isinstance(theta, dict) and theta:
+            keys = tuple(sorted(theta.keys()))
+        else:
+            keys = tuple(sorted(self.feature_weights.keys()))
+        return ParameterSpace(keys=keys, neutral_value=0.0)
 
     def num_free_parameters(self, parameters: dict | None = None) -> int:
         """
         Count number of free parameters.
 
-        Required for AIC/BIC computation.
-
         Args:
-            parameters: Optional parameters dict (uses self.feature_weights if None)
+            parameters: Optional parameters dict.
 
         Returns:
             Number of parameters
         """
-        params = parameters if parameters is not None else self.feature_weights
-        return len(params)
+        params = parameters if parameters is not None else self.parameters
+        theta = params.get("theta", params)
+        return len(theta) if isinstance(theta, dict) else 0
 
     def initial_parameters(self) -> np.ndarray:
         """
         Get initial parameter vector for optimization.
 
-        Returns neutral starting point (all weights = 0.0).
-
         Returns:
-            Initial parameter vector
+            Initial parameter vector (neutral starting point = 0.0)
         """
         if not self.feature_weights:
-            return np.array([])
+            return np.array([], dtype=float)
 
-        # Start from zeros (neutral)
-        n_params = len(self.feature_weights)
-        return np.zeros(n_params)
+        return np.zeros(len(self.feature_weights), dtype=float)
 
     def get_constrained_baseline(self, parameters: dict | None = None):
         """
         Create baseline with constrained rates.
 
-        This is where θ gets applied to baseline rates.
-        Returns a modified baseline that can be used for simulation/inference.
+        DEVIATION RATIONALE:
+        For assembly theory, constraints are applied dynamically during graph neighbor
+        generation (lazy state-space traversal), not by wrapping a pre-enumerated
+        rate matrix. We return 'self' so that graph operations and stochastic
+        simulators can access constraint_contribution() directly.
 
         Args:
             parameters: Optional parameters dict (uses self.feature_weights if None)
 
         Returns:
-            Modified baseline (conceptually - actual implementation returns self)
-
-        Note:
-            For assembly, the constraint is applied during graph neighbor generation,
-            not by modifying the baseline directly. This method exists for interface
-            compatibility but doesn't create a new baseline object.
+            This constraint object (AssemblyConstraint) acting as a constrained baseline.
         """
-        # For assembly theory, constraints are applied in graph.get_neighbors()
-        # via constraint.constraint_contribution()
-        #
-        # We don't modify the baseline itself - the baseline is physics-agnostic.
-        # Instead, we return self so that graph operations can access constraint_contribution()
-
         if parameters is not None:
-            self.feature_weights = parameters.copy()
-            # Return self with updated parameters
-            # (In a more sophisticated implementation, we'd return a copy)
+            # We must be careful not to mutate global state if possible,
+            # but currently ConstraintInference expects this object to have the params.
+            self.set_parameters(**parameters)
 
         return self

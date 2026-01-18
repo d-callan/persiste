@@ -62,7 +62,7 @@ class TestBaselineSanityCheck:
 
     def test_baseline_warning_with_divergent_observations(self, baseline, initial_state):
         """Baseline should warn when observations diverge significantly."""
-        # Many more compounds than baseline would produce
+        # Many more compounds than baseline would produce (simulated mismatch)
         observed = {f"compound_{i}" for i in range(100)}
         primitives = ["A", "B"]
 
@@ -76,11 +76,14 @@ class TestBaselineSanityCheck:
             seed=42,
         )
 
-        # Should detect divergence
-        assert result.divergence_score > 0
-        # Multiplier should be elevated if warning
-        if not result.baseline_ok:
-            assert result.delta_ll_multiplier > 1.0
+        # 1. Should detect divergence
+        msg = f"Expected high divergence, got {result.divergence_score:.2f}"
+        assert result.divergence_score > 1.0, msg
+
+        # 2. Multiplier should be elevated (mild=2.0 or severe=3.0)
+        assert result.delta_ll_multiplier > 1.0, "Multiplier should be boosted for divergent data"
+        assert result.warning_level in ("mild", "severe")
+        assert not result.baseline_ok
 
     def test_multiplier_values(self, baseline, initial_state):
         """Test that multipliers are correctly assigned."""

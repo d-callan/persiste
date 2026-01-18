@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-
 import persiste_rust
 
 # Symmetry Break A parameters
@@ -283,7 +282,7 @@ def main() -> None:
     primitives = [chr(ord("A") + i) for i in range(args.n_primitives)]
     initial_states = [[p] for p in primitives[:2]]
 
-    print(f"Generating depth-gated dataset with Symmetry Break A:")
+    print("Generating depth-gated dataset with Symmetry Break A:")
     print(f"  D* = {DEPTH_GATE_THRESHOLD}, θ_depth = {DEPTH_GATE_THETA}")
     print(f"  Primitives: {args.n_primitives}, Depth: {args.max_depth}")
     print(f"  Trajectories: {args.n_trajectories}")

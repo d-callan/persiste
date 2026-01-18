@@ -63,7 +63,6 @@ class PresenceObservationModel(ObservationModel):
         data: ObservedTransitions,
         baseline: Any,
         graph: Any,
-        parameters: dict[str, float] | None = None,
     ) -> float:
         """
         Compute log-likelihood of observations.
@@ -76,7 +75,6 @@ class PresenceObservationModel(ObservationModel):
             data: ObservedTransitions with observed_compounds and latent_states
             baseline: Baseline model (unused)
             graph: TransitionGraph (unused)
-            parameters: Optional parameters (unused)
 
         Returns:
             Log-likelihood of observations given latent state distribution
@@ -88,8 +86,8 @@ class PresenceObservationModel(ObservationModel):
                 "'observed_compounds' and 'latent_states' attributes"
             )
 
-        observed_compounds = data.observed_compounds
-        latent_states = data.latent_states
+        observed_compounds = getattr(data, "observed_compounds")
+        latent_states = getattr(data, "latent_states")
 
         return self.compute_log_likelihood(observed_compounds, latent_states)
 
@@ -208,7 +206,6 @@ class FrequencyWeightedPresenceModel(ObservationModel):
         data: ObservedTransitions,
         baseline: Any,
         graph: Any,
-        parameters: dict[str, float] | None = None,
     ) -> float:
         """
         Compute log-likelihood of frequency-weighted observations.
@@ -217,7 +214,6 @@ class FrequencyWeightedPresenceModel(ObservationModel):
             data: ObservedTransitions with observed_counts and latent_states
             baseline: Baseline model (unused)
             graph: TransitionGraph (unused)
-            parameters: Optional parameters (unused)
 
         Returns:
             Log-likelihood
@@ -228,8 +224,8 @@ class FrequencyWeightedPresenceModel(ObservationModel):
                 "'observed_counts' and 'latent_states' attributes"
             )
 
-        observed_counts = data.observed_counts
-        latent_states = data.latent_states
+        observed_counts = getattr(data, "observed_counts")
+        latent_states = getattr(data, "latent_states")
 
         return self.compute_log_likelihood(observed_counts, latent_states)
 

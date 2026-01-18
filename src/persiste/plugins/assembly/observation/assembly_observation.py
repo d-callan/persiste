@@ -5,7 +5,7 @@ Adapters that bridge assembly observation backends to the shared ObservationMode
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -83,14 +83,14 @@ class AssemblyObservationModel(ObservationModel):
         self._last_latent_states: dict[AssemblyState, float] | None = None
         self._last_trajectories: list[Trajectory] | None = None
 
-    def rate(self, i: int, j: int) -> float:  # pragma: no cover - unused for assembly models
+    def rate(self, i: int, j: int) -> float:  # pragma: no cover
         """Delegates to the wrapped observation model."""
         return self.obs_model.rate(i, j)
 
     def log_likelihood(
         self,
         data: ObservedTransitions,
-        baseline: AssemblyConstraint,
+        baseline: Any,
         graph: Any,
     ) -> float:
         """
@@ -98,8 +98,13 @@ class AssemblyObservationModel(ObservationModel):
 
         Args:
             data: ObservedTransitions augmented with domain-specific attributes.
-            baseline: AssemblyConstraint representing the current θ (from ConstraintInference).
+            baseline: Expected to be an AssemblyConstraint instance (from ConstraintInference).
             graph: TransitionGraph (unused; adapter tracks graph internally).
+
+        DEVIATION RATIONALE:
+        Core PERSISTE expects 'baseline' to be a Baseline object. In assembly,
+        constraints are applied dynamically during lazy graph traversal, so
+        ConstraintInference.get_constrained_baseline() returns an AssemblyConstraint.
         """
         if not isinstance(baseline, AssemblyConstraint):
             raise TypeError(
@@ -123,12 +128,12 @@ class AssemblyObservationModel(ObservationModel):
         return self.obs_model.log_likelihood(obs_data, self.baseline, self.graph)
 
     @property
-    def last_latent_states(self) -> Optional[dict[AssemblyState, float]]:
+    def last_latent_states(self) -> dict[AssemblyState, float] | None:
         """Return latent state distribution from the most recent evaluation."""
         return self._last_latent_states
 
     @property
-    def last_trajectories(self) -> Optional[list[Trajectory]]:
+    def last_trajectories(self) -> list[Trajectory] | None:
         """Return cached trajectories from the most recent evaluation, if any."""
         return self._last_trajectories
 

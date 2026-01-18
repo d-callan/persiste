@@ -11,9 +11,9 @@ from typing import Any
 
 import persiste_rust
 
-from persiste.plugins.assembly.states.assembly_state import AssemblyState
 from persiste.plugins.assembly.baselines.assembly_baseline import AssemblyBaseline
 from persiste.plugins.assembly.constraints.assembly_constraint import AssemblyConstraint
+from persiste.plugins.assembly.states.assembly_state import AssemblyState
 
 logger = logging.getLogger(__name__)
 
@@ -120,15 +120,13 @@ class CachedAssemblyObservationModel:
         self._last_ess_ratio: float | None = 1.0
 
     def get_latent_states(
-        self,
-        constraint: AssemblyConstraint,
+        self, constraint: AssemblyConstraint
     ) -> dict[int, float]:
         """
         Get latent state distribution for given constraint.
 
         Transparently handles cache management - either reweights cached
         trajectories or resimulates if cache is invalid.
-
         Args:
             constraint: Constraint model with feature weights
 

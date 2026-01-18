@@ -1,17 +1,17 @@
 """Decoupled diagnostics suite for assembly inference."""
 
 from persiste.plugins.assembly.diagnostics.artifacts import (
+    CachedPathData,
     DiagnosticArtifacts,
     InferenceArtifacts,
-    CachedPathData,
 )
 from persiste.plugins.assembly.diagnostics.suite import (
-    null_resampling,
-    profile_likelihood,
-    baseline_sensitivity,
+    BaselineSensitivityResult,
     NullResamplingResult,
     ProfileLikelihoodResult,
-    BaselineSensitivityResult,
+    baseline_sensitivity,
+    null_resampling,
+    profile_likelihood,
 )
 
 __all__ = [

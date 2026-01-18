@@ -7,9 +7,9 @@ This is pure plumbing - makes assembly plugin look like PERSISTE constraint mode
 """
 
 import sys
+
 sys.path.insert(0, 'src')
 
-import numpy as np
 from persiste.plugins.assembly.constraints.assembly_constraint import AssemblyConstraint
 
 
@@ -17,125 +17,125 @@ def main():
     print("=" * 80)
     print("ConstraintModel Interface Demo (Phase 1.6)")
     print("=" * 80)
-    
+
     print("\nPure plumbing: θ ↔ vector for scipy.optimize")
-    
+
     # ========================================================================
     # Create Constraint Model
     # ========================================================================
     print("\n" + "=" * 80)
     print("Create Constraint Model")
     print("=" * 80)
-    
+
     constraint = AssemblyConstraint({
         'reuse_count': 1.2,
         'depth_change': -0.4,
         'symmetry_score': 0.1,
     })
-    
+
     print(f"\n{constraint}")
     print(f"\nParameters: {constraint.get_parameters()}")
-    
+
     # ========================================================================
     # Pack to Vector
     # ========================================================================
     print("\n" + "=" * 80)
     print("Pack: θ → vector")
     print("=" * 80)
-    
+
     theta_vec = constraint.pack()
-    
-    print(f"\nFeature weights (dict):")
+
+    print("\nFeature weights (dict):")
     for k, v in constraint.get_parameters().items():
         print(f"  {k:20s} = {v:.2f}")
-    
-    print(f"\nPacked vector:")
+
+    print("\nPacked vector:")
     print(f"  {theta_vec}")
     print(f"  Shape: {theta_vec.shape}")
-    
+
     # ========================================================================
     # Unpack from Vector
     # ========================================================================
     print("\n" + "=" * 80)
     print("Unpack: vector → θ")
     print("=" * 80)
-    
+
     # Modify vector
     theta_vec_modified = theta_vec * 1.5
-    
-    print(f"\nModified vector:")
+
+    print("\nModified vector:")
     print(f"  {theta_vec_modified}")
-    
+
     theta_dict = constraint.unpack(theta_vec_modified)
-    
-    print(f"\nUnpacked parameters:")
+
+    print("\nUnpacked parameters:")
     for k, v in theta_dict.items():
         print(f"  {k:20s} = {v:.2f}")
-    
+
     # ========================================================================
     # Count Parameters
     # ========================================================================
     print("\n" + "=" * 80)
     print("Count Parameters (for AIC/BIC)")
     print("=" * 80)
-    
+
     n_params = constraint.num_free_parameters()
     print(f"\nNumber of free parameters: {n_params}")
-    
+
     # ========================================================================
     # Initial Parameters
     # ========================================================================
     print("\n" + "=" * 80)
     print("Initial Parameters (for optimization)")
     print("=" * 80)
-    
+
     theta0 = constraint.initial_parameters()
-    
-    print(f"\nInitial vector (neutral):")
+
+    print("\nInitial vector (neutral):")
     print(f"  {theta0}")
-    print(f"  All zeros (neutral starting point)")
-    
+    print("  All zeros (neutral starting point)")
+
     # ========================================================================
     # Round-Trip Test
     # ========================================================================
     print("\n" + "=" * 80)
     print("Round-Trip Test")
     print("=" * 80)
-    
+
     # Original
     original = constraint.get_parameters()
-    
+
     # Pack
     vec = constraint.pack()
-    
+
     # Unpack
     recovered = constraint.unpack(vec)
-    
+
     # Compare
     print(f"\nOriginal:  {original}")
     print(f"Recovered: {recovered}")
-    
+
     match = all(abs(original[k] - recovered[k]) < 1e-10 for k in original.keys())
     print(f"\nRound-trip successful: {match}")
-    
+
     # ========================================================================
     # Null Model
     # ========================================================================
     print("\n" + "=" * 80)
     print("Null Model (Edge Case)")
     print("=" * 80)
-    
+
     null = AssemblyConstraint.null_model()
-    
+
     print(f"\n{null}")
     print(f"Parameters: {null.get_parameters()}")
     print(f"Packed: {null.pack()}")
     print(f"Num params: {null.num_free_parameters()}")
-    
+
     print("\n" + "=" * 80)
     print("Demo Complete!")
     print("=" * 80)
-    
+
     print("\nPhase 1.6 ✓ Complete")
     print("  ✓ pack() implemented")
     print("  ✓ unpack() implemented")

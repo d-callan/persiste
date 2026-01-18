@@ -9,10 +9,8 @@ Tests the key validation criteria:
 
 import math
 
-import numpy as np
-import pytest
-
 import persiste_rust
+import pytest
 
 from persiste.plugins.assembly.baselines.assembly_baseline import AssemblyBaseline
 from persiste.plugins.assembly.cli import InferenceMode, fit_assembly_constraints
@@ -20,8 +18,8 @@ from persiste.plugins.assembly.constraints.assembly_constraint import AssemblyCo
 from persiste.plugins.assembly.diagnostics.artifacts import CachedPathData, InferenceArtifacts
 from persiste.plugins.assembly.diagnostics.suite import null_resampling, profile_likelihood
 from persiste.plugins.assembly.observation.cached_observation import (
-    CachedAssemblyObservationModel,
     CacheConfig,
+    CachedAssemblyObservationModel,
     SimulationSettings,
 )
 from persiste.plugins.assembly.screening.screening import (
@@ -138,32 +136,39 @@ class TestCacheManagement:
         assert status["valid"] is True
         assert abs(status["ess"] - 50.0) < 0.1
 
-    def test_cache_invalid_outside_trust_region(self):
-        """Cache should be invalid when θ exits trust region."""
+    def test_cache_invalid_on_ess_collapse(self):
+        """
+        Specification:
+        Cache should be invalid if ESS falls below threshold, even if inside trust radius.
+        This prevents using high-variance likelihood estimates.
+        """
+        # 1. Generate baseline trajectories at theta=0
         result = persiste_rust.simulate_assembly_trajectories(
             primitives=["A", "B"],
             initial_parts=["A"],
             theta={},
-            n_samples=50,
+            n_samples=100,
             t_max=10.0,
             burn_in=2.0,
             max_depth=3,
             seed=42,
         )
-
         feature_counts = [r["feature_counts"] for r in result]
         final_state_ids = [r["final_state_id"] for r in result]
 
+        # 2. Evaluate at a theta that causes massive reweighting (ESS collapse)
+        # We set a large trust_radius to ensure the failure is due to ESS
         status = persiste_rust.evaluate_cache(
             feature_counts,
             final_state_ids,
-            theta={"reuse_count": 2.0},  # delta = 2.0 > trust_radius = 1.0
+            theta={"reuse_count": 3.0},
             theta_ref={},
-            trust_radius=1.0,
+            trust_radius=10.0,
+            ess_threshold=0.5, # Require at least 50% effective samples
         )
 
-        assert status["valid"] is False
-        assert "trust radius" in status["reason"].lower()
+        assert status["valid"] is False, f"Cache should have collapsed (ESS={status.get('ess')})"
+        assert "ess" in status["reason"].lower(), f"Expected ESS failure, got: {status['reason']}"
 
     def test_topology_guard_detects_large_changes(self):
         """Topology guard should detect large θ changes in sensitive features."""
@@ -186,6 +191,49 @@ class TestCacheManagement:
         )
 
         assert len(affected) == 0
+
+
+class TestFailureModes:
+    """Test critical failure modes and safety triggers."""
+
+    def test_baseline_misspecification_penalty(self):
+        """
+        Specification:
+        Inference should detect or be penalized by baseline misspecification.
+        Data generated with join_exponent=-0.7 but inferred with join_exponent=-0.3 should
+        show a lower absolute LL than a correctly specified model.
+        """
+        primitives = ["A", "B"]
+        # Use a state that is more likely under -0.7 (smaller/simpler)
+        # vs -0.3 (larger/more complex)
+        observed = {"A", "B", "state_1"}
+
+        # 1. Correct baseline (join_exponent=-0.7)
+        result_correct = fit_assembly_constraints(
+            observed_compounds=observed,
+            primitives=primitives,
+            mode=InferenceMode.FULL_STOCHASTIC,
+            join_exponent=-0.7,
+            n_samples=100,
+            seed=42
+        )
+
+        # 2. Misspecified baseline (join_exponent=-0.3)
+        result_misspecified = fit_assembly_constraints(
+            observed_compounds=observed,
+            primitives=primitives,
+            mode=InferenceMode.FULL_STOCHASTIC,
+            join_exponent=-0.3,
+            n_samples=100,
+            seed=42
+        )
+
+        # The absolute LL of the correctly specified baseline should be higher (less negative)
+        msg = (
+            f"Correct baseline LL ({result_correct['stochastic_ll']:.2f}) "
+            f"should exceed misspecified LL ({result_misspecified['stochastic_ll']:.2f})"
+        )
+        assert result_correct["stochastic_ll"] > result_misspecified["stochastic_ll"], msg
 
 
 class TestCachedObservationModel:
@@ -523,7 +571,7 @@ class TestCLI:
     def test_stability_under_heavy_cache_reuse(self):
         """
         Validation: Inference should not snap back to θ=0 under heavy cache reuse.
-        
+
         This tests that the importance sampling doesn't degrade catastrophically
         when we reweight many times.
         """

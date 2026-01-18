@@ -4,8 +4,8 @@ from persiste.plugins.assembly.baselines.assembly_baseline import AssemblyBaseli
 from persiste.plugins.assembly.cli import InferenceMode, fit_assembly_constraints
 from persiste.plugins.assembly.constraints.assembly_constraint import AssemblyConstraint
 from persiste.plugins.assembly.observation.cached_observation import (
-    CachedAssemblyObservationModel,
     CacheConfig,
+    CachedAssemblyObservationModel,
     SimulationSettings,
 )
 from persiste.plugins.assembly.states.assembly_state import AssemblyState

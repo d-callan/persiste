@@ -198,5 +198,5 @@ Profile likelihood CIs use the likelihood ratio test:
 
 - `../safety/` - Tier 1 automatic safety checks
 - `../diagnostics/` - Diagnostic artifacts and suite
-- `../examples/` - Usage examples
-- `../../docs/ASSEMBLY_DIAGNOSTICS_PLAN.md` - Full implementation plan
+- `../validation/` - Internal validation and benchmarking scripts
+- `../../docs/ASSEMBLY_USER_GUIDE.md` - Full user guide and API reference

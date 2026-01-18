@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-
 import persiste_rust
 
 # Baseline physics (same as other benchmarks)

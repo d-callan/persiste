@@ -11,11 +11,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from persiste.plugins.assembly.diagnostics.artifacts import InferenceArtifacts
-from persiste.plugins.assembly.diagnostics.suite import (
-    CachedPathData,
-    profile_likelihood,
-)
+from persiste.plugins.assembly.diagnostics.suite import profile_likelihood
 from persiste.plugins.assembly.recipes.base import DiagnosticReport
 
 
@@ -106,8 +102,7 @@ class ProfileLikelihoodReport(DiagnosticReport):
 
 
 def profile_likelihood_sweep(
-    artifacts: InferenceArtifacts,
-    cache: CachedPathData,
+    inference_result: dict,
     feature_name: str,
     n_grid: int = 21,
 ) -> ProfileLikelihoodReport:
@@ -118,8 +113,8 @@ def profile_likelihood_sweep(
     characterize uncertainty in θ̂.
 
     Args:
-        artifacts: InferenceArtifacts from fit_assembly_constraints
-        cache: CachedPathData from inference
+        inference_result: Result dict from fit_assembly_constraints
+            (must contain 'artifacts' and 'cache')
         feature_name: Feature to profile
         n_grid: Number of grid points (default: 21)
 
@@ -127,11 +122,17 @@ def profile_likelihood_sweep(
         ProfileLikelihoodReport with CI and interpretation
 
     Example:
-        >>> from persiste.plugins.assembly.recipes import profile_likelihood_sweep
-        >>> report = profile_likelihood_sweep(artifacts, cache, 'reuse_count')
+        >>> result = fit_assembly_constraints(...)
+        >>> report = profile_likelihood_sweep(result, 'reuse_count')
         >>> report.print_summary()
-        >>> report.plot(save_path='profile_reuse_count.png')
     """
+    artifacts = inference_result.get("artifacts")
+    cache = inference_result.get("cache")
+
+    if artifacts is None or cache is None:
+        msg = "Inference result must contain 'artifacts' and 'cache' for this diagnostic."
+        raise ValueError(msg)
+
     # Use existing implementation from diagnostics/suite.py
     result = profile_likelihood(artifacts, cache, feature_name, n_grid)
 

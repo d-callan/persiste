@@ -8,7 +8,6 @@ low-dimensional, robust summaries that avoid rare states and exact topology.
 from dataclasses import dataclass
 
 import numpy as np
-
 import persiste_rust
 
 from persiste.plugins.assembly.baselines.assembly_baseline import AssemblyBaseline

@@ -19,10 +19,10 @@ from persiste.plugins.assembly.states.assembly_state import AssemblyState
 class TransitionFeatures:
     """
     Features extracted from an assembly transition.
-    
+
     These are observables, not value judgments.
     A constraint model assigns weights to these features.
-    
+
     Attributes:
         reuse_count: Number of times source appears in target's history
         depth_change: Change in assembly depth (target - source)
@@ -45,13 +45,13 @@ class TransitionFeatures:
     same_class_reuse: float = 0.0
     cross_class_reuse: float = 0.0
     founder_reuse: float = 0.0
-    
+
     def __post_init__(self):
         if self.motif_gained is None:
             self.motif_gained = set()
         if self.motif_lost is None:
             self.motif_lost = set()
-    
+
     def to_dict(self) -> dict[str, float]:
         """
         Convert features to flat dict for constraint evaluation.
@@ -85,17 +85,17 @@ class TransitionFeatures:
 class AssemblyFeatureExtractor:
     """
     Extract features from assembly transitions.
-    
+
     This is Layer 1 (mechanics) - defines WHAT features exist.
     Layer 2 (theory) defines which features matter and their weights.
-    
+
     Features are:
     - Cheap: O(1) or O(parts) computation
     - Local: Only depend on source and target states
     - Compositional: Combine linearly
     - Interpretable: Clear physical meaning
     """
-    
+
     def __init__(
         self,
         depth_gate_threshold: int | None = None,
@@ -160,8 +160,10 @@ class AssemblyFeatureExtractor:
         # Symmetry Break B: Context-class reuse
         # Bonus for same-class reuse, penalty for cross-class
         if reuse > 0 and self.primitive_classes:
-            source_classes = {self.primitive_classes.get(p, "unknown") for p in source.get_parts_dict().keys()}
-            target_classes = {self.primitive_classes.get(p, "unknown") for p in target.get_parts_dict().keys()}
+            source_parts = source.get_parts_dict().keys()
+            source_classes = {self.primitive_classes.get(p, "unknown") for p in source_parts}
+            target_parts = target.get_parts_dict().keys()
+            target_classes = {self.primitive_classes.get(p, "unknown") for p in target_parts}
             if source_classes and target_classes:
                 if source_classes == target_classes:
                     features.same_class_reuse = float(reuse)
@@ -175,18 +177,18 @@ class AssemblyFeatureExtractor:
                 features.founder_reuse = float(reuse)
 
         return features
-    
+
     def _compute_reuse(self, source: AssemblyState, target: AssemblyState) -> int:
         """
         Count reuse: how many subassemblies in target match source?
-        
+
         Simple heuristic: check if source is a subassembly of target.
         Full implementation would track assembly history.
         """
         if self._is_submultiset(source.get_parts_dict(), target.get_parts_dict()):
             return 1
         return 0
-    
+
 
     @staticmethod
     def _is_submultiset(source_parts: dict[str, int], target_parts: dict[str, int]) -> bool:
@@ -200,7 +202,7 @@ class AssemblyFeatureExtractor:
             if target_parts.get(part, 0) < count:
                 return False
         return True
-    
+
     def get_feature_names(self) -> list[str]:
         """
         Get list of all possible feature names.
