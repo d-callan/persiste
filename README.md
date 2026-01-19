@@ -156,7 +156,7 @@ The **GeneContent plugin** provides phylogenetic analysis of pangenome gain/loss
 
 ```python
 from persiste.plugins.genecontent.pam_interface import fit
-from persiste.plugins.genecontent.strain_recipes import strain_heterogeneity_scan
+from persiste.plugins.genecontent.recipes import run_heterogeneity_diagnostic
 
 # Load your presence/absence matrix
 result = fit(
@@ -167,7 +167,7 @@ result = fit(
 )
 
 # Check for strain heterogeneity (ALWAYS RECOMMENDED)
-scan = strain_heterogeneity_scan(pam, taxa, genes)
+scan = run_heterogeneity_diagnostic(pam, taxa, genes)
 scan.print_summary()
 ```
 
@@ -194,7 +194,7 @@ persiste/
 │       ├── genecontent/               # GeneContent plugin (production-ready)
 │       │   ├── pam_interface.py       # Main interface
 │       │   ├── strain_diagnostics.py  # Heterogeneity diagnostics
-│       │   ├── strain_recipes.py      # Two-recipe framework
+│       │   ├── recipes/               # User-facing recipe package
 │       │   ├── examples/              # Example scripts & workflows
 │       │   ├── exploratory/           # Development/validation scripts
 │       │   └── README.md

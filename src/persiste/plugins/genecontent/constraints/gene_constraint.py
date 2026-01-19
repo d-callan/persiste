@@ -15,14 +15,22 @@ Constraint types (v1):
 2. Host/environment association: Retained only in specific hosts
 3. Functional group coherence: Pathway-level retention
 4. Genome reduction bias: Lineage-specific loss acceleration
+5. Environmental gradient: Rates scale with continuous metadata
+6. Genomic cluster linkage: Coordinated loss/gain for adjacent genes
 """
+
+from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set
+from typing import TYPE_CHECKING
+
 import numpy as np
 
 from persiste.core.constraint_utils import MultiplicativeConstraint
+
+if TYPE_CHECKING:
+    pass
 
 
 @dataclass
@@ -67,7 +75,7 @@ class GeneContentConstraint(MultiplicativeConstraint, ABC):
     """
 
     @abstractmethod
-    def get_effect(self, family_id: str, context: Optional[Dict] = None) -> ConstraintEffect:
+    def get_effect(self, family_id: str, context: dict | None = None) -> ConstraintEffect:
         """
         Get constraint effect for a gene family.
 
@@ -81,12 +89,12 @@ class GeneContentConstraint(MultiplicativeConstraint, ABC):
         pass
 
     @abstractmethod
-    def get_parameters(self) -> Dict[str, float]:
+    def get_parameters(self) -> dict[str, float]:
         """Get all constraint parameters as a dict."""
         pass
 
     @abstractmethod
-    def set_parameters(self, params: Dict[str, float]):
+    def set_parameters(self, params: dict[str, float]):
         """Set constraint parameters from a dict."""
         pass
 
@@ -102,8 +110,8 @@ class GeneContentConstraint(MultiplicativeConstraint, ABC):
         family_idx: int | None = None,
         family_id: str | None = None,
         lineage_id: str | None = None,
-        context: Optional[Dict] = None,
-    ) -> Dict[tuple[int, int], float]:
+        context: dict | None = None,
+    ) -> dict[tuple[int, int], float]:
         """Map constraint effects onto 2-state gain/loss transitions."""
         if family_id is None:
             raise ValueError("family_id is required for gene content constraints")
@@ -117,7 +125,7 @@ class GeneContentConstraint(MultiplicativeConstraint, ABC):
         """Log prior on constraint parameters (default: 0)."""
         return 0.0
 
-    def get_parameter_names(self) -> List[str]:
+    def get_parameter_names(self) -> list[str]:
         """Get list of parameter names for optimization."""
         return list(self.get_parameters().keys())
 
@@ -130,7 +138,7 @@ class GeneContentConstraint(MultiplicativeConstraint, ABC):
         return 0.0  # Default: no effect
 
     @classmethod
-    def null_model(cls) -> "NullConstraint":
+    def null_model(cls) -> NullConstraint:
         """Return a null constraint (no effect)."""
         return NullConstraint()
 
@@ -144,15 +152,15 @@ class NullConstraint(GeneContentConstraint):
     Use as null hypothesis for LRT.
     """
 
-    def get_effect(self, family_id: str, context: Optional[Dict] = None) -> ConstraintEffect:
+    def get_effect(self, family_id: str, context: dict | None = None) -> ConstraintEffect:
         """No effect on any family."""
         return ConstraintEffect(family_id=family_id)
 
-    def get_parameters(self) -> Dict[str, float]:
+    def get_parameters(self) -> dict[str, float]:
         """No parameters."""
         return {}
 
-    def set_parameters(self, params: Dict[str, float]):
+    def set_parameters(self, params: dict[str, float]):
         """No parameters to set."""
         pass
 
@@ -174,10 +182,10 @@ class PerFamilyConstraint(GeneContentConstraint):
         regularization: L2 regularization strength (0 = none)
     """
 
-    effects: Dict[str, tuple] = field(default_factory=dict)
+    effects: dict[str, tuple] = field(default_factory=dict)
     regularization: float = 0.1
 
-    def get_effect(self, family_id: str, context: Optional[Dict] = None) -> ConstraintEffect:
+    def get_effect(self, family_id: str, context: dict | None = None) -> ConstraintEffect:
         """Get effect for a family."""
         if family_id in self.effects:
             gain_eff, loss_eff = self.effects[family_id]
@@ -186,7 +194,7 @@ class PerFamilyConstraint(GeneContentConstraint):
 
         return ConstraintEffect(gain_effect=gain_eff, loss_effect=loss_eff, family_id=family_id)
 
-    def get_parameters(self) -> Dict[str, float]:
+    def get_parameters(self) -> dict[str, float]:
         """Get all parameters as flat dict."""
         params = {}
         for fam, (gain_eff, loss_eff) in self.effects.items():
@@ -194,7 +202,7 @@ class PerFamilyConstraint(GeneContentConstraint):
             params[f"{fam}_loss"] = loss_eff
         return params
 
-    def set_parameters(self, params: Dict[str, float]):
+    def set_parameters(self, params: dict[str, float]):
         """Set parameters from flat dict."""
         # Group by family
         families = set()
@@ -239,12 +247,12 @@ class RetentionBiasConstraint(GeneContentConstraint):
         prior_std: Standard deviation of Gaussian prior (default: 2.0)
     """
 
-    retained_families: Set[str] = field(default_factory=set)
+    retained_families: set[str] = field(default_factory=set)
     retention_strength: float = -1.0  # Default: ~2.7x reduction in loss rate
     prior_mean: float = 0.0  # Null hypothesis: no effect
     prior_std: float = 2.0  # Weak prior: allows effects up to ~6x rate change
 
-    def get_effect(self, family_id: str, context: Optional[Dict] = None) -> ConstraintEffect:
+    def get_effect(self, family_id: str, context: dict | None = None) -> ConstraintEffect:
         """Reduced loss rate for retained families."""
         if family_id in self.retained_families:
             return ConstraintEffect(
@@ -252,11 +260,11 @@ class RetentionBiasConstraint(GeneContentConstraint):
             )
         return ConstraintEffect(family_id=family_id)
 
-    def get_parameters(self) -> Dict[str, float]:
+    def get_parameters(self) -> dict[str, float]:
         """Single parameter: retention strength."""
         return {"retention_strength": self.retention_strength}
 
-    def set_parameters(self, params: Dict[str, float]):
+    def set_parameters(self, params: dict[str, float]):
         """Set retention strength."""
         if "retention_strength" in params:
             self.retention_strength = params["retention_strength"]
@@ -299,11 +307,11 @@ class HostAssociationConstraint(GeneContentConstraint):
         default_loss_increase: Increased loss rate when not in associated host
     """
 
-    associations: Dict[str, Set[str]] = field(default_factory=dict)
-    host_effects: Dict[str, float] = field(default_factory=dict)
+    associations: dict[str, set[str]] = field(default_factory=dict)
+    host_effects: dict[str, float] = field(default_factory=dict)
     default_loss_increase: float = 1.0  # ~2.7x increased loss when not associated
 
-    def get_effect(self, family_id: str, context: Optional[Dict] = None) -> ConstraintEffect:
+    def get_effect(self, family_id: str, context: dict | None = None) -> ConstraintEffect:
         """
         Get effect based on host context.
 
@@ -331,14 +339,14 @@ class HostAssociationConstraint(GeneContentConstraint):
                 gain_effect=0.0, loss_effect=self.default_loss_increase, family_id=family_id
             )
 
-    def get_parameters(self) -> Dict[str, float]:
+    def get_parameters(self) -> dict[str, float]:
         """Get host effect parameters."""
         params = {"default_loss_increase": self.default_loss_increase}
         for host, effect in self.host_effects.items():
             params[f"host_{host}"] = effect
         return params
 
-    def set_parameters(self, params: Dict[str, float]):
+    def set_parameters(self, params: dict[str, float]):
         """Set host effect parameters."""
         if "default_loss_increase" in params:
             self.default_loss_increase = params["default_loss_increase"]
@@ -366,10 +374,10 @@ class GenomeReductionConstraint(GeneContentConstraint):
         reduction_strength: Log-increase in loss rate (positive = more loss)
     """
 
-    reduction_lineages: Set[str] = field(default_factory=set)
+    reduction_lineages: set[str] = field(default_factory=set)
     reduction_strength: float = 1.0  # ~2.7x increased loss rate
 
-    def get_effect(self, family_id: str, context: Optional[Dict] = None) -> ConstraintEffect:
+    def get_effect(self, family_id: str, context: dict | None = None) -> ConstraintEffect:
         """Increased loss rate in reduction lineages."""
         if context is None or "lineage" not in context:
             return ConstraintEffect(family_id=family_id)
@@ -382,15 +390,156 @@ class GenomeReductionConstraint(GeneContentConstraint):
             )
         return ConstraintEffect(family_id=family_id)
 
-    def get_parameters(self) -> Dict[str, float]:
+    def get_parameters(self) -> dict[str, float]:
         """Single parameter: reduction strength."""
         return {"reduction_strength": self.reduction_strength}
 
-    def set_parameters(self, params: Dict[str, float]):
+    def set_parameters(self, params: dict[str, float]):
         """Set reduction strength."""
         if "reduction_strength" in params:
             self.reduction_strength = params["reduction_strength"]
 
     def n_parameters(self) -> int:
         """One parameter."""
+        return 1
+
+
+@dataclass
+class PathwayCoherenceConstraint(GeneContentConstraint):
+    """
+    Functional group coherence: pathway-level selective effects.
+
+    Models the idea that gene families belonging to the same pathway
+    or functional group share selective pressure.
+
+    Attributes:
+        pathway_map: Dict mapping pathway_id -> set of family_ids
+        pathway_effects: Dict mapping pathway_id -> (gain_effect, loss_effect)
+        regularization: L2 regularization strength
+    """
+
+    pathway_map: dict[str, set[str]] = field(default_factory=dict)
+    pathway_effects: dict[str, tuple] = field(default_factory=dict)
+    regularization: float = 0.5
+
+    def get_effect(self, family_id: str, context: dict | None = None) -> ConstraintEffect:
+        """Sum effects across all pathways the family belongs to."""
+        gain_eff = 0.0
+        loss_eff = 0.0
+
+        for path_id, families in self.pathway_map.items():
+            if family_id in families:
+                effs = self.pathway_effects.get(path_id, (0.0, 0.0))
+                gain_eff += effs[0]
+                loss_eff += effs[1]
+
+        return ConstraintEffect(gain_effect=gain_eff, loss_effect=loss_eff, family_id=family_id)
+
+    def get_parameters(self) -> dict[str, float]:
+        params = {}
+        for path_id, (gain, loss) in self.pathway_effects.items():
+            params[f"pathway_{path_id}_gain"] = gain
+            params[f"pathway_{path_id}_loss"] = loss
+        return params
+
+    def set_parameters(self, params: dict[str, float]):
+        pathways = set()
+        for key in params:
+            if key.startswith("pathway_"):
+                path_id = key.split("_")[1]
+                pathways.add(path_id)
+
+        for path_id in pathways:
+            gain = params.get(f"pathway_{path_id}_gain", 0.0)
+            loss = params.get(f"pathway_{path_id}_loss", 0.0)
+            self.pathway_effects[path_id] = (gain, loss)
+
+    def n_parameters(self) -> int:
+        return 2 * len(self.pathway_effects)
+
+    def log_prior(self) -> float:
+        if self.regularization <= 0:
+            return 0.0
+        penalty = sum(g**2 + loss_val**2 for g, loss_val in self.pathway_effects.values())
+        return -0.5 * self.regularization * penalty
+
+
+@dataclass
+class EnvironmentalGradientConstraint(GeneContentConstraint):
+    """
+    Environmental gradient: rates scale with continuous metadata.
+
+    Models how gain/loss rates vary along a continuous environmental
+    gradient (e.g., temperature, pH, salinity).
+
+    Attributes:
+        metadata_key: Key in context dict for the environmental value
+        gain_slope: Effect on log-gain per unit change in metadata
+        loss_slope: Effect on log-loss per unit change in metadata
+        reference_value: Value where effect is zero (baseline)
+    """
+
+    metadata_key: str = "gradient"
+    gain_slope: float = 0.0
+    loss_slope: float = 0.0
+    reference_value: float = 0.0
+
+    def get_effect(self, family_id: str, context: dict | None = None) -> ConstraintEffect:
+        if context is None or self.metadata_key not in context:
+            return ConstraintEffect(family_id=family_id)
+
+        value = context[self.metadata_key] - self.reference_value
+        return ConstraintEffect(
+            gain_effect=self.gain_slope * value,
+            loss_effect=self.loss_slope * value,
+            family_id=family_id,
+        )
+
+    def get_parameters(self) -> dict[str, float]:
+        return {"gain_slope": self.gain_slope, "loss_slope": self.loss_slope}
+
+    def set_parameters(self, params: dict[str, float]):
+        if "gain_slope" in params:
+            self.gain_slope = params["gain_slope"]
+        if "loss_slope" in params:
+            self.loss_slope = params["loss_slope"]
+
+    def n_parameters(self) -> int:
+        return 2
+
+
+@dataclass
+class GenomicClusterConstraint(GeneContentConstraint):
+    """
+    Genomic cluster linkage: coordinated effects for adjacent genes.
+
+    Models selective coupling between genes in the same operon or cluster.
+    If a cluster partner is present/lost, it affects the other's rates.
+
+    Attributes:
+        clusters: Dict mapping cluster_id -> set of family_ids
+        coordinated_loss_bias: Extra loss reduction when partners are present
+    """
+
+    clusters: dict[str, set[str]] = field(default_factory=dict)
+    coordinated_loss_bias: float = -0.5
+
+    def get_effect(self, family_id: str, context: dict | None = None) -> ConstraintEffect:
+        # Note: This context would ideally include presence of cluster partners.
+        # For v1, we focus on a simpler lineage-level cluster retention boost.
+        for cluster_id, families in self.clusters.items():
+            if family_id in families:
+                return ConstraintEffect(
+                    gain_effect=0.0, loss_effect=self.coordinated_loss_bias, family_id=family_id
+                )
+        return ConstraintEffect(family_id=family_id)
+
+    def get_parameters(self) -> dict[str, float]:
+        return {"coordinated_loss_bias": self.coordinated_loss_bias}
+
+    def set_parameters(self, params: dict[str, float]):
+        if "coordinated_loss_bias" in params:
+            self.coordinated_loss_bias = params["coordinated_loss_bias"]
+
+    def n_parameters(self) -> int:
         return 1

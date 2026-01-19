@@ -1,10 +1,12 @@
 import math
-
 import pytest
 
 from persiste.plugins.genecontent.constraints.gene_constraint import (
     ConstraintEffect,
+    EnvironmentalGradientConstraint,
+    GenomicClusterConstraint,
     NullConstraint,
+    PathwayCoherenceConstraint,
     PerFamilyConstraint,
     RetentionBiasConstraint,
 )
@@ -79,3 +81,52 @@ def test_retention_bias_constraint_applies_loss_reduction():
     z = (constraint.retention_strength - constraint.prior_mean) / constraint.prior_std
     expected = -0.5 * z ** 2 - math.log(constraint.prior_std * math.sqrt(2 * math.pi))
     assert log_prior == pytest.approx(expected)
+
+
+def test_pathway_coherence_constraint():
+    path_map = {"path1": {"famA", "famB"}, "path2": {"famB", "famC"}}
+    effs = {"path1": (0.5, -0.5), "path2": (0.1, -0.1)}
+    constraint = PathwayCoherenceConstraint(pathway_map=path_map, pathway_effects=effs)
+
+    # famA is in path1
+    eff_a = constraint.get_effect("famA")
+    assert eff_a.gain_effect == pytest.approx(0.5)
+    assert eff_a.loss_effect == pytest.approx(-0.5)
+
+    # famB is in both path1 and path2
+    eff_b = constraint.get_effect("famB")
+    assert eff_b.gain_effect == pytest.approx(0.6)
+    assert eff_b.loss_effect == pytest.approx(-0.6)
+
+    # Round trip parameters
+    params = constraint.get_parameters()
+    assert params["pathway_path1_gain"] == 0.5
+    constraint.set_parameters({"pathway_path1_gain": 0.8})
+    assert constraint.pathway_effects["path1"][0] == 0.8
+
+
+def test_environmental_gradient_constraint():
+    constraint = EnvironmentalGradientConstraint(
+        metadata_key="temp", gain_slope=0.1, loss_slope=-0.2, reference_value=20.0
+    )
+
+    # Test effect at 30 degrees (diff = 10)
+    context = {"temp": 30.0}
+    eff = constraint.get_effect("famA", context=context)
+    assert eff.gain_effect == pytest.approx(1.0)
+    assert eff.loss_effect == pytest.approx(-2.0)
+
+    # Test parameters
+    params = constraint.get_parameters()
+    assert params == {"gain_slope": 0.1, "loss_slope": -0.2}
+
+
+def test_genomic_cluster_constraint():
+    clusters = {"cluster1": {"fam1", "fam2"}}
+    constraint = GenomicClusterConstraint(clusters=clusters, coordinated_loss_bias=-0.8)
+
+    eff_fam1 = constraint.get_effect("fam1")
+    assert eff_fam1.loss_effect == pytest.approx(-0.8)
+
+    eff_neutral = constraint.get_effect("famX")
+    assert eff_neutral.is_neutral()

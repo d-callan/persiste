@@ -7,8 +7,10 @@ Phylogenetic analysis of gene content evolution in pangenomes using binary trait
 ### Main Modules
 
 - **`pam_interface.py`** - Primary interface for PAM (Presence/Absence Matrix) analysis
-- **`strain_diagnostics.py`** - Diagnostic tools for detecting strain heterogeneity
-- **`strain_recipes.py`** - Two-recipe framework for handling heterogeneous datasets
+- **`strain_diagnostics.py`** - Core utilities for detecting strain heterogeneity
+- **`recipes/`** - User-facing recipe package
+  - `heterogeneity.py`: Strain-focused diagnostics & stratified modeling
+  - `selective.py`: Constraint-driven hypothesis tests & baseline checks
 
 ### Supporting Modules
 
@@ -25,48 +27,86 @@ The key insight: **Parameter estimates in pangenome analysis are highly sensitiv
 ```python
 from persiste.plugins.genecontent.pam_interface import fit
 from persiste.plugins.genecontent.strain_diagnostics import diagnose_strain_heterogeneity
-from persiste.plugins.genecontent.strain_recipes import strain_heterogeneity_scan
+from persiste.plugins.genecontent.recipes import (
+    run_heterogeneity_diagnostic,
+    test_pathway_retention,
+)
 
 # Load your PAM data
 pam, taxon_names, gene_names = load_your_data()
 
-# Step 1: Run diagnostic
+from persiste.plugins.genecontent.recipes import run_heterogeneity_diagnostic
+
+# Step 0: Optional summary stats
 diag = diagnose_strain_heterogeneity(pam)
 diag.print_report()
 
-# Step 2: Run heterogeneity scan (ALWAYS RECOMMENDED)
-scan = strain_heterogeneity_scan(pam, taxon_names, gene_names)
+# Step 1: Run heterogeneity diagnostic (checks for outlier-driven regimes)
+scan = run_heterogeneity_diagnostic(pam, taxon_names, gene_names)
 scan.print_summary()
 
-# Step 3: Decide based on scan results
-max_shift = max(abs(v) for v in scan.parameter_shifts.values())
-
-if max_shift > 100:
-    # EXTREME heterogeneity - use stratified modeling
-    from persiste.plugins.genecontent.strain_recipes import stratified_regime_modeling
-    
-    stratified = stratified_regime_modeling(pam, taxon_names, gene_names)
-    stratified.print_summary()
-else:
-    # Standard global model
-    result = fit(pam, taxon_names=taxon_names, gene_names=gene_names)
-    result.print_summary()
+# Step 2: Test a selective hypothesis (e.g., pathway retention)
+pathway_map = {"glycolysis": {"geneA", "geneB"}}
+test_res = test_pathway_retention(pam, taxon_names, gene_names, pathway_map)
+test_res.print_summary()
 ```
 
-### Two-Recipe Framework
+### Analysis Recipes
 
-**Recipe 1: Strain Heterogeneity Scan (DIAGNOSTIC)**
-- Tests parameter stability by removing outlier strains
-- **This is the hypothesis test** - parameter shifts >100% indicate significant heterogeneity
-- Should be run as standard first step for any pangenome analysis
-- Returns: `HeterogeneityScanResult` with parameter shifts and interpretation
+Recipes live under `persiste.plugins.genecontent.recipes` and are grouped by focus area:
 
-**Recipe 2: Stratified Regime Modeling (DESCRIPTIVE)**
-- Models high-accessory and low-accessory strains separately
-- Provides descriptive comparison of evolutionary regimes
-- NOT a formal statistical test - use for biological interpretation
-- Use when Recipe 1 detects significant heterogeneity
-- Returns: `StratifiedRegimeResult` with separate regime estimates
+1. **Heterogeneity diagnostics (`recipes.heterogeneity`)**
+   - `run_heterogeneity_diagnostic` – user entry point for `strain_heterogeneity_scan`
+   - `strain_heterogeneity_scan` – detailed diagnostic comparing strain subsets
+   - `stratified_regime_modeling` – descriptive comparison of high/low-accessory regimes
+
+2. **Selective tests (`recipes.selective`)**
+   - `run_baseline_diagnostics` – sanity-check null model goodness
+   - `test_selective_hypothesis` – generic LRT wrapper for any `GeneContentConstraint`
+   - `test_pathway_retention` – convenience wrapper for pathway coherence analyses
+   - `test_environmental_gradient` – tests for rate shifts along continuous metadata
+
+### Constraint types (v1):
+1. Global retention bias: Some genes are selectively retained
+2. Host/environment association: Retained only in specific hosts
+3. Functional group coherence: Pathway-level retention
+4. Genome reduction bias: Lineage-specific loss acceleration
+5. Environmental gradient: Rates scale with continuous metadata
+6. Genomic cluster linkage: Coordinated loss/gain for adjacent genes
+
+## Usage Examples
+
+### Pathway Coherence
+```python
+from persiste.plugins.genecontent.constraints.gene_constraint import PathwayCoherenceConstraint
+
+constraint = PathwayCoherenceConstraint(
+    pathway_map={"glycolysis": {"geneA", "geneB"}},
+    pathway_effects={"glycolysis": (0.5, -1.0)}  # Boost gain, reduce loss
+)
+```
+
+### Environmental Gradient
+```python
+from persiste.plugins.genecontent.constraints.gene_constraint import EnvironmentalGradientConstraint
+
+constraint = EnvironmentalGradientConstraint(
+    metadata_key="temperature",
+    gain_slope=0.1,
+    loss_slope=-0.05,
+    reference_value=25.0
+)
+```
+
+### Genomic Cluster
+```python
+from persiste.plugins.genecontent.constraints.gene_constraint import GenomicClusterConstraint
+
+constraint = GenomicClusterConstraint(
+    clusters={"operon1": {"geneH", "geneI"}},
+    coordinated_loss_bias=-0.8
+)
+```
 
 ### Why This Matters
 
