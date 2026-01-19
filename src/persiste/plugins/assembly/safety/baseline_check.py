@@ -89,7 +89,7 @@ def check_baseline_sanity(
         BaselineSanityResult with divergence assessment
     """
     # Simulate under null (θ=0)
-    null_trajectories = persiste_rust.simulate_assembly_trajectories(
+    simulation_result = persiste_rust.simulate_assembly_trajectories(
         primitives=primitives,
         initial_parts=initial_state.get_parts_list(),
         theta={},
@@ -102,7 +102,9 @@ def check_baseline_sanity(
         join_exponent=baseline.join_exponent,
         split_exponent=baseline.split_exponent,
         decay_rate=baseline.decay_rate,
+        initial_state_id=initial_state.stable_id,
     )
+    null_trajectories = simulation_result["paths"]
 
     # Compute expected summaries (low-dimensional, robust)
     # 1. Unique compounds across all trajectories

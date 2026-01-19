@@ -96,6 +96,7 @@ class CachedAssemblyObservationModel:
         simulation: SimulationSettings | None = None,
         cache_config: CacheConfig | None = None,
         rng_seed: int | None = None,
+        graph: Any | None = None,
     ):
         """
         Initialize cached observation model.
@@ -107,6 +108,7 @@ class CachedAssemblyObservationModel:
             simulation: Simulation settings (default: SimulationSettings())
             cache_config: Cache configuration (default: CacheConfig())
             rng_seed: Optional RNG seed for reproducibility
+            graph: Optional pre-built AssemblyGraph for mapping
         """
         self.primitives = primitives
         self.baseline = baseline
@@ -114,6 +116,13 @@ class CachedAssemblyObservationModel:
         self.simulation = simulation or SimulationSettings()
         self.cache_config = cache_config or CacheConfig()
         self.rng_seed = rng_seed or 42
+        
+        # Ensure we have a graph if we need to resolve IDs to structures
+        if graph is None:
+            from persiste.plugins.assembly.graphs.assembly_graph import AssemblyGraph
+            self.graph = AssemblyGraph(primitives=self.primitives)
+        else:
+            self.graph = graph
 
         self._cache: CacheState | None = None
         self._resimulation_count = 0
@@ -133,6 +142,8 @@ class CachedAssemblyObservationModel:
         Returns:
             Dict mapping state_id -> probability
         """
+        # Store current constraint metadata for potential resimulation
+        self._current_constraint = constraint
         theta = constraint.feature_weights
 
         if self._cache is None:
@@ -181,7 +192,32 @@ class CachedAssemblyObservationModel:
             f"Initializing cache with {self.simulation.n_samples} trajectories at θ_ref={theta_ref}"
         )
 
-        results = persiste_rust.simulate_assembly_trajectories(
+        # Extract symmetry break parameters from the current constraint
+        # Symmetry Break A: Depth-gated reuse
+        depth_gate_threshold = getattr(self._current_constraint.feature_extractor, "depth_gate_threshold", None)
+        depth_gate_theta = theta_ref.get("depth_gate_reuse", 0.0)
+
+        # Symmetry Break B: Context-class reuse
+        primitive_classes = getattr(self._current_constraint.feature_extractor, "primitive_classes", None)
+        context_class_config = None
+        if primitive_classes:
+            context_class_config = {
+                "primitive_classes": primitive_classes,
+                "same_class_theta": theta_ref.get("same_class_reuse", 0.0),
+                "cross_class_theta": theta_ref.get("cross_class_reuse", 0.0),
+            }
+
+        # Symmetry Break C: Founder bias
+        founder_rank_threshold = getattr(self._current_constraint.feature_extractor, "founder_rank_threshold", None)
+        founder_bias_config = None
+        if founder_rank_threshold is not None:
+            founder_bias_config = {
+                "founder_rank_threshold": founder_rank_threshold,
+                "founder_bonus_theta": theta_ref.get("founder_reuse", 0.0),
+                "late_penalty_theta": 0.0, # Not currently in extractor but supported in Rust
+            }
+
+        simulation_result = persiste_rust.simulate_assembly_trajectories(
             primitives=self.primitives,
             initial_parts=self.initial_state.get_parts_list(),
             theta=theta_ref,
@@ -194,7 +230,19 @@ class CachedAssemblyObservationModel:
             join_exponent=self.baseline.join_exponent,
             split_exponent=self.baseline.split_exponent,
             decay_rate=self.baseline.decay_rate,
+            initial_state_id=self.initial_state.stable_id,
+            depth_gate_threshold=depth_gate_threshold,
+            depth_gate_theta=depth_gate_theta,
+            context_class_config=context_class_config,
+            founder_bias_config=founder_bias_config,
         )
+
+        results = simulation_result["paths"]
+        discovered_states = simulation_result["discovered_states"]
+
+        # Bulk register discovered states in the graph
+        if self.graph:
+            self.graph.bulk_register_states(discovered_states)
 
         self._cache = CacheState(
             feature_counts=[r["feature_counts"] for r in results],

@@ -17,6 +17,9 @@ import sys
 from enum import Enum
 from typing import Any
 
+import numpy as np
+from scipy.optimize import minimize
+
 from persiste.plugins.assembly.baselines.assembly_baseline import AssemblyBaseline
 from persiste.plugins.assembly.constraints.assembly_constraint import AssemblyConstraint
 from persiste.plugins.assembly.diagnostics.artifacts import CachedPathData, InferenceArtifacts
@@ -37,6 +40,7 @@ from persiste.plugins.assembly.screening.steady_state import (
     SteadyStateConfig,
 )
 from persiste.plugins.assembly.states.assembly_state import AssemblyState
+from persiste.plugins.assembly.states.resolver import StateIDResolver
 
 logger = logging.getLogger(__name__)
 
@@ -296,6 +300,10 @@ def fit_assembly_constraints(
         logger.info(f"Running stochastic inference (mode={mode.value})")
 
         # Create cached observation model
+        # Pre-build graph if not already available for mapping
+        from persiste.plugins.assembly.graphs.assembly_graph import AssemblyGraph
+        graph = AssemblyGraph(primitives, max_depth=max_depth)
+
         cached_model = CachedAssemblyObservationModel(
             primitives=primitives,
             baseline=baseline,
@@ -311,123 +319,124 @@ def fit_assembly_constraints(
                 ess_threshold=ess_threshold,
             ),
             rng_seed=seed,
+            graph=graph,
         )
 
-        # Start from screening result if available
-        theta_init = result["theta_hat"] if result["theta_hat"] else {}
+        # 1. Resolve state mapping.
+        # We use a StateIDResolver to bridge human-readable compound labels to Rust IDs.
+        resolver = StateIDResolver(primitives)
+        compound_to_state = {}
+        observed_ids = set()
+        for compound in observed_compounds:
+            try:
+                sid = resolver.resolve_string(compound)
+                compound_to_state[compound] = sid
+                observed_ids.add(sid)
+            except ValueError:
+                logger.warning(f"Could not resolve compound: {compound}")
+                continue
 
-        # Get latent states at null model for ΔLL baseline
+        # 2. Get latent states at null model for ΔLL baseline
         null_constraint = AssemblyConstraint(feature_weights={})
         null_latent_states = cached_model.get_latent_states(null_constraint)
+        null_ess_ratio = cached_model.current_ess_ratio
 
+        # IMPORTANT: Use direct compute_observation_ll for absolute LLs
         null_ll = compute_observation_ll(
             null_latent_states,
-            observed_compounds,
-            primitives,
-            observation_records=observation_records,
-            max_depth=max_depth,
-            null_latent_states=None,  # Absolute LL for null
-            ess_ratio=1.0,
-        )
-
-        # Get latent states at initial theta
-        constraint = AssemblyConstraint(feature_weights=theta_init)
-        latent_states = cached_model.get_latent_states(constraint)
-        ess_ratio = cached_model.current_ess_ratio
-
-        # Simple refinement: evaluate a few nearby points
-        # (Full optimization would use scipy.optimize or similar)
-        best_theta = theta_init
-        best_ll = compute_observation_ll(
-            latent_states,
-            observed_compounds,
+            observed_ids,
             primitives,
             observation_records=observation_records,
             max_depth=max_depth,
             null_latent_states=None,
-            ess_ratio=ess_ratio,
+            ess_ratio=null_ess_ratio,
+            compound_to_state=compound_to_state,
         )
-        best_delta_ll = best_ll - null_ll
 
-        logger.info(f"Initial θ={theta_init}, ΔLL={best_delta_ll:.2f}, null_LL={null_ll:.2f}")
+        # Start from screening result if available, otherwise start at null
+        theta_init = result["theta_hat"] if result["theta_hat"] else {}
+        
+        # 3. Get latent states at initial theta
+        constraint = AssemblyConstraint(feature_weights=theta_init)
+        latent_states = cached_model.get_latent_states(constraint)
+        init_ess_ratio = cached_model.current_ess_ratio
 
-        # Iterative Coordinate Descent (Hill Climbing)
-        # We loop until convergence or max iterations is reached.
-        # This allows the optimizer to climb from 0.0 to higher values (e.g. 2.5) step-by-step.
-        max_iterations = 10
-        iteration = 0
-        converged = False
+        # 4. Continuous Optimization using scipy.optimize
+        def objective(x):
+            # Map array back to dict
+            current_theta = {name: val for name, val in zip(feature_names, x)}
 
-        logger.info(f"Starting stochastic hill climbing (max_iter={max_iterations})...")
+            # Get latent states (handles caching/importance sampling internally)
+            constraint = AssemblyConstraint(feature_weights=current_theta)
+            current_latent_states = cached_model.get_latent_states(constraint)
+            current_ess_ratio = cached_model.current_ess_ratio
 
-        while not converged and iteration < max_iterations:
-            iteration += 1
-            improved_in_pass = False
+            # Compute ΔLL using ratio mode
+            delta_ll = compute_observation_ll(
+                current_latent_states,
+                observed_ids,
+                primitives,
+                observation_records=observation_records,
+                max_depth=max_depth,
+                null_latent_states=null_latent_states,
+                ess_ratio=current_ess_ratio,
+                compound_to_state=compound_to_state,
+            )
 
-            # Grid search around current best point
-            # Regularization: skip large steps if current ΔLL is small (avoid overfitting noise)
-            regularization_threshold = 0.5
+            # Return negative ΔLL for minimization
+            return -delta_ll
 
-            for feature in feature_names:
-                # Check neighbors in discrete steps
-                # Added finer steps (+/- 0.1) to catch subtle parameters like depth_change
-                for delta in [-0.1, 0.1, -0.5, 0.5, -1.0, 1.0]:
-                    test_theta = best_theta.copy()
-                    test_theta[feature] = test_theta.get(feature, 0.0) + delta
+        # Calculate initial ΔLL for reporting
+        initial_delta_ll = compute_observation_ll(
+            latent_states,
+            observed_ids,
+            primitives,
+            observation_records=observation_records,
+            max_depth=max_depth,
+            null_latent_states=null_latent_states,
+            ess_ratio=init_ess_ratio,
+            compound_to_state=compound_to_state,
+        )
 
-                    # Skip if this would push θ too far from zero when ΔLL is already small
-                    if best_delta_ll < regularization_threshold:
-                        theta_norm = sum(abs(v) for v in test_theta.values())
-                        if theta_norm > 10.0:
-                            continue
+        # Prepare initial guess array
+        x0 = np.array([theta_init.get(name, 0.0) for name in feature_names])
 
-                    constraint = AssemblyConstraint(feature_weights=test_theta)
-                    latent_states = cached_model.get_latent_states(constraint)
-                    ess_ratio = cached_model.current_ess_ratio
+        logger.info(f"Initial θ={theta_init}, ΔLL={initial_delta_ll:.2f}, null_LL={null_ll:.2f}")
+        logger.info("Starting continuous optimization (L-BFGS-B)...")
 
-                    test_ll = compute_observation_ll(
-                        latent_states,
-                        observed_compounds,
-                        primitives,
-                        observation_records=observation_records,
-                        max_depth=max_depth,
-                        null_latent_states=None,
-                        ess_ratio=ess_ratio,
-                    )
+        # Run optimization
+        opt_result = minimize(
+            objective,
+            x0,
+            method="L-BFGS-B",
+            options={"maxiter": 20, "ftol": 1e-3, "disp": False}
+        )
 
-                    delta_ll = test_ll - null_ll
+        # Update best results from optimization
+        best_x = opt_result.x
+        best_theta_dict = {name: val for name, val in zip(feature_names, best_x)}
+        best_delta_ll = -opt_result.fun
+        best_ll = null_ll + best_delta_ll
 
-                    # Require a small minimum improvement to avoid numerical jitter loops
-                    if delta_ll > best_delta_ll + 0.01:
-                        best_delta_ll = delta_ll
-                        best_theta = test_theta
-                        best_ll = test_ll
-                        improved_in_pass = True
-                        msg = f"Improved (iter {iteration}): θ={best_theta}"
-                        logger.info(msg)
-                    elif logger.isEnabledFor(logging.DEBUG):
-                        msg = (
-                            f"Rejected (iter {iteration}): θ={test_theta}, "
-                            f"ΔLL={delta_ll:.2f} <= best={best_delta_ll:.2f}"
-                        )
-                        logger.debug(msg)
+        logger.info(f"Optimization converged: {opt_result.success}, iterations: {opt_result.nit}")
+        logger.info(f"Final θ={best_theta_dict}, ΔLL={best_delta_ll:.2f}")
 
-            if not improved_in_pass:
-                converged = True
-                logger.info(f"Converged after {iteration} iterations.")
-            elif iteration >= max_iterations:
-                logger.info(f"Reached max iterations ({max_iterations}). Stopping.")
-
-        result["theta_hat"] = best_theta
+        result["theta_hat"] = best_theta_dict
         result["stochastic_ll"] = best_ll
         result["stochastic_null_ll"] = null_ll
         result["stochastic_delta_ll"] = best_delta_ll
         result["cache_stats"] = cached_model.cache_stats
+        result["optimization_status"] = {
+            "success": bool(opt_result.success),
+            "message": str(opt_result.message),
+            "nfev": int(opt_result.nfev),
+            "nit": int(opt_result.nit)
+        }
 
         # Populate deep diagnostic artifacts for Tier 2 recipes
-        cache_id = f"cache_{seed}_{iteration}"
+        cache_id = f"cache_{seed}_{opt_result.nit}"
         result["artifacts"] = InferenceArtifacts(
-            theta_hat=best_theta,
+            theta_hat=best_theta_dict,
             log_likelihood=best_ll,
             cache_id=cache_id,
             baseline_config={
@@ -452,7 +461,7 @@ def fit_assembly_constraints(
             result["deterministic_vs_stochastic_delta_gap"] = (
                 best_delta_ll - result["deterministic_delta_ll"]
             )
-        msg = f"Stochastic refinement: best_θ={best_theta}, ΔLL={best_delta_ll:.2f}"
+        msg = f"Stochastic refinement: best_θ={best_theta_dict}, ΔLL={best_delta_ll:.2f}"
         logger.info(msg)
 
     # Run Tier 1 safety checks (unless skipped)

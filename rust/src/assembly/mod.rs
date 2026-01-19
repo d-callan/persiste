@@ -18,13 +18,11 @@ pub mod topology_guard;
 
 pub use state::{AssemblyState, AssemblyStateId};
 pub use baseline::{AssemblyBaseline, TransitionType};
-pub use constraint::AssemblyConstraint;
+pub use constraint::{AssemblyConstraint, ContextClassConfig, FounderBiasConfig};
 pub use path_stats::PathStats;
 pub use gillespie::{
     GillespieSimulator,
     SimulationConfig,
-    ContextClassConfig,
-    FounderBiasConfig,
     simulate_trajectories_parallel,
 };
 pub use cache_manager::{CacheManager, CacheConfig, CacheStatus, InvalidationReason};

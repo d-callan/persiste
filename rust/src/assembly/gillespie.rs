@@ -14,7 +14,7 @@ use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
 
 use super::baseline::{AssemblyBaseline, TransitionType};
-use super::constraint::AssemblyConstraint;
+use super::constraint::{AssemblyConstraint, ContextClassConfig, FounderBiasConfig};
 use super::path_stats::PathStats;
 use super::state::{AssemblyState, AssemblyStateId};
 
@@ -43,28 +43,6 @@ pub struct SimulationConfig {
     pub context_class_config: Option<ContextClassConfig>,
     /// Optional founder-bias configuration (Symmetry Break C).
     pub founder_bias_config: Option<FounderBiasConfig>,
-}
-
-/// Optional configuration for context-dependent reuse (Symmetry Break B).
-#[derive(Clone, Debug)]
-pub struct ContextClassConfig {
-    /// Mapping from primitive name to context class label.
-    pub primitive_classes: HashMap<String, String>,
-    /// Log-scale modifier applied when reuse occurs within the same class.
-    pub same_class_theta: f64,
-    /// Log-scale modifier applied when reuse occurs across classes.
-    pub cross_class_theta: f64,
-}
-
-/// Configuration for founder bias (Symmetry Break C).
-#[derive(Clone, Debug)]
-pub struct FounderBiasConfig {
-    /// States with visit rank <= threshold get founder bonus.
-    pub founder_rank_threshold: u32,
-    /// Log-scale bonus applied to founders (exp applied internally).
-    pub founder_bonus_theta: f64,
-    /// Log-scale penalty applied to late/derived states.
-    pub late_penalty_theta: f64,
 }
 
 impl Default for SimulationConfig {
@@ -125,7 +103,13 @@ impl GillespieSimulator {
         for primitive in &self.config.primitives {
             let target = state.join_with(primitive);
             let base_rate = self.baseline.get_rate(state, &target, TransitionType::Join);
-            let multiplier = self.constraint.rate_multiplier(state, &target, TransitionType::Join);
+            let multiplier = self.constraint.rate_multiplier(
+                state,
+                &target,
+                TransitionType::Join,
+                Some(target.depth()),
+                None,
+            );
             let class_multiplier =
                 self.compute_class_modifier(state, &target, TransitionType::Join);
             let effective_rate = base_rate * multiplier * class_multiplier;
@@ -172,10 +156,17 @@ impl GillespieSimulator {
                 new_parts,
                 new_depth,
                 state.motifs().clone(),
+                None,
             );
 
             let base_rate = self.baseline.get_rate(state, &target, TransitionType::Split);
-            let multiplier = self.constraint.rate_multiplier(state, &target, TransitionType::Split);
+            let multiplier = self.constraint.rate_multiplier(
+                state,
+                &target,
+                TransitionType::Split,
+                Some(target.depth()),
+                None,
+            );
             let class_multiplier =
                 self.compute_class_modifier(state, &target, TransitionType::Split);
             let effective_rate = base_rate * multiplier * class_multiplier;
@@ -194,7 +185,13 @@ impl GillespieSimulator {
 
         let target = AssemblyState::empty();
         let base_rate = self.baseline.get_rate(state, &target, TransitionType::Decay);
-        let multiplier = self.constraint.rate_multiplier(state, &target, TransitionType::Decay);
+        let multiplier = self.constraint.rate_multiplier(
+            state,
+            &target,
+            TransitionType::Decay,
+            Some(0),
+            None,
+        );
         let class_multiplier =
             self.compute_class_modifier(state, &target, TransitionType::Decay);
         let effective_rate = base_rate * multiplier * class_multiplier;
@@ -208,6 +205,13 @@ impl GillespieSimulator {
     ///
     /// Returns PathStats with sufficient statistics for importance sampling.
     pub fn simulate(&self, initial_state: &AssemblyState, rng: &mut StdRng) -> PathStats {
+        self.simulate_with_visitor(initial_state, rng, |_| {})
+    }
+
+    /// Run simulation and call visitor for each new state encountered.
+    pub fn simulate_with_visitor<F>(&self, initial_state: &AssemblyState, rng: &mut StdRng, mut visitor: F) -> PathStats 
+    where F: FnMut(&AssemblyState)
+    {
         let mut current_state = initial_state.clone();
         let mut current_time = 0.0;
 
@@ -218,6 +222,9 @@ impl GillespieSimulator {
         let mut next_rank: u32 = 1;
         visit_rank.insert(current_state.id(), 0);
         first_visit_time.insert(current_state.id(), 0.0);
+        
+        // Initial state is visited
+        visitor(&current_state);
 
         while current_time < self.config.t_max {
             let neighbors = self.get_neighbors(&current_state);
@@ -276,7 +283,8 @@ impl GillespieSimulator {
             // Record transition features (after burn-in)
             if current_time >= self.config.burn_in {
                 let mut features =
-                    self.extract_transition_features(&current_state, next_state, *transition_type);
+                    self.constraint.extract_features(&current_state, next_state, *transition_type, Some(max_depth_reached), None);
+                
                 if let Some(config) = &self.config.founder_bias_config {
                     if *transition_type == TransitionType::Join
                         && self.is_reuse_transition(&current_state, next_state)
@@ -294,6 +302,10 @@ impl GillespieSimulator {
             }
 
             current_state = next_state.clone();
+            
+            // New state encountered
+            visitor(&current_state);
+
             if current_state.depth() > max_depth_reached {
                 max_depth_reached = current_state.depth();
             }
@@ -469,7 +481,7 @@ pub fn simulate_trajectories_parallel(
     initial_state: &AssemblyState,
     n_samples: usize,
     seed: u64,
-) -> Vec<PathStats> {
+) -> (Vec<PathStats>, HashMap<AssemblyStateId, AssemblyState>) {
     let simulator = GillespieSimulator::new(
         baseline.clone(),
         constraint.clone(),
@@ -477,13 +489,34 @@ pub fn simulate_trajectories_parallel(
     );
 
     // Parallel simulation using Rayon
-    (0..n_samples)
+    let (paths, states_vec): (Vec<PathStats>, Vec<HashMap<AssemblyStateId, AssemblyState>>) = (0..n_samples)
         .into_par_iter()
         .map(|i| {
             let mut rng = StdRng::seed_from_u64(seed.wrapping_add(i as u64));
-            simulator.simulate(initial_state, &mut rng)
+            let mut visited_states = HashMap::new();
+            
+            // We need to capture states visited in the trajectory
+            // For now, let's modify simulate to accept a collector or just return them
+            let mut current_state = initial_state.clone();
+            visited_states.insert(current_state.id(), current_state.clone());
+            
+            let path = simulator.simulate_with_visitor(&initial_state, &mut rng, |s| {
+                visited_states.insert(s.id(), s.clone());
+            });
+            
+            (path, visited_states)
         })
-        .collect()
+        .unzip();
+
+    // Aggregate unique states
+    let mut all_states = HashMap::new();
+    for states_map in states_vec {
+        for (id, state) in states_map {
+            all_states.entry(id).or_insert(state);
+        }
+    }
+
+    (paths, all_states)
 }
 
 /// Sample final state distribution from parallel trajectories.
@@ -497,7 +530,7 @@ pub fn sample_final_states(
     n_samples: usize,
     seed: u64,
 ) -> HashMap<u64, f64> {
-    let path_stats = simulate_trajectories_parallel(
+    let (path_stats, _) = simulate_trajectories_parallel(
         baseline,
         constraint,
         config,

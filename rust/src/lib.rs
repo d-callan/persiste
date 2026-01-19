@@ -13,7 +13,8 @@ mod assembly;
 use tree::Tree;
 use pruning::felsenstein_pruning;
 use distance::{jaccard_distance_matrix, hamming_distance_matrix};
-use assembly::{AssemblyState, AssemblyBaseline, AssemblyConstraint, SimulationConfig, ContextClassConfig, FounderBiasConfig, CacheConfig, CacheManager, CacheStatus, InvalidationReason, TopologyGuard};
+use assembly::constraint::{ContextClassConfig, FounderBiasConfig};
+use assembly::{AssemblyState, AssemblyBaseline, AssemblyConstraint, SimulationConfig, CacheConfig, CacheManager, CacheStatus, InvalidationReason, TopologyGuard};
 
 /// Compute log-likelihoods for all gene families in parallel.
 ///
@@ -133,7 +134,7 @@ fn compute_hamming_distance<'py>(
 /// # Returns
 /// * List of dicts, each containing path statistics
 #[pyfunction]
-#[pyo3(signature = (primitives, initial_parts, theta, n_samples, t_max, burn_in, max_depth, seed, kappa=1.0, join_exponent=-0.5, split_exponent=0.3, decay_rate=0.01, depth_gate_threshold=None, depth_gate_theta=0.0, context_class_config=None, founder_bias_config=None))]
+#[pyo3(signature = (primitives, initial_parts, theta, n_samples, t_max, burn_in, max_depth, seed, kappa=1.0, join_exponent=-0.5, split_exponent=0.3, decay_rate=0.01, depth_gate_threshold=None, depth_gate_theta=0.0, context_class_config=None, founder_bias_config=None, initial_state_id=None))]
 fn simulate_assembly_trajectories<'py>(
     py: Python<'py>,
     primitives: Vec<String>,
@@ -152,7 +153,8 @@ fn simulate_assembly_trajectories<'py>(
     depth_gate_theta: f64,
     context_class_config: Option<&PyDict>,
     founder_bias_config: Option<&PyDict>,
-) -> PyResult<Vec<PyObject>> {
+    initial_state_id: Option<u64>,
+) -> PyResult<PyObject> {
     // Convert theta from PyDict to HashMap
     let mut theta_map: HashMap<String, f64> = HashMap::new();
     for (key, value) in theta.iter() {
@@ -163,7 +165,7 @@ fn simulate_assembly_trajectories<'py>(
 
     // Build components
     let baseline = AssemblyBaseline::new(kappa, join_exponent, split_exponent, decay_rate);
-    let constraint = AssemblyConstraint::new(theta_map.clone());
+    
     let context_config = match context_class_config {
         Some(cfg) => {
             let primitive_classes = match cfg.get_item("primitive_classes")? {
@@ -216,6 +218,13 @@ fn simulate_assembly_trajectories<'py>(
         None => None,
     };
 
+    let constraint = AssemblyConstraint::new(
+        theta_map.clone(),
+        depth_gate_threshold,
+        context_config.clone(),
+        founder_config.clone(),
+    );
+
     let config = SimulationConfig {
         t_max,
         burn_in,
@@ -231,9 +240,20 @@ fn simulate_assembly_trajectories<'py>(
     // Create initial state
     let initial_parts_refs: Vec<&str> = initial_parts.iter().map(|s| s.as_str()).collect();
     let initial_state = AssemblyState::new(&initial_parts_refs, 0, None);
+    
+    // Override ID if provided by Python
+    let initial_state = if let Some(sid) = initial_state_id {
+        let mut parts_map = std::collections::BTreeMap::new();
+        for part in initial_parts {
+            *parts_map.entry(part).or_insert(0) += 1;
+        }
+        AssemblyState::from_parts_map(parts_map, 0, std::collections::BTreeSet::new(), Some(sid))
+    } else {
+        initial_state
+    };
 
     // Simulate
-    let path_stats = assembly::simulate_trajectories_parallel(
+    let (path_stats, discovered_states) = assembly::simulate_trajectories_parallel(
         &baseline,
         &constraint,
         &config,
@@ -243,7 +263,7 @@ fn simulate_assembly_trajectories<'py>(
     );
 
     // Convert results to Python dicts
-    let results: Vec<PyObject> = path_stats
+    let paths: Vec<PyObject> = path_stats
         .into_iter()
         .map(|ps| {
             let dict = PyDict::new(py);
@@ -268,7 +288,29 @@ fn simulate_assembly_trajectories<'py>(
         })
         .collect();
 
-    Ok(results)
+    // Convert discovered states to a mapping Python can use
+    let states_dict = PyDict::new(py);
+    for (id, state) in discovered_states {
+        let state_info = PyDict::new(py);
+        
+        let parts_dict = PyDict::new(py);
+        for (part, &count) in state.parts() {
+            parts_dict.set_item(part, count).unwrap();
+        }
+        state_info.set_item("parts", parts_dict).unwrap();
+        state_info.set_item("depth", state.depth()).unwrap();
+        
+        let motifs_vec: Vec<String> = state.motifs().iter().cloned().collect();
+        state_info.set_item("motifs", motifs_vec).unwrap();
+        
+        states_dict.set_item(id, state_info).unwrap();
+    }
+
+    let result = PyDict::new(py);
+    result.set_item("paths", paths).unwrap();
+    result.set_item("discovered_states", states_dict).unwrap();
+
+    Ok(result.into())
 }
 
 /// Compute importance weights for cached paths at a new theta.

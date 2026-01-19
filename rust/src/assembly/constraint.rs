@@ -57,8 +57,18 @@ pub struct AssemblyConstraint {
 
 impl AssemblyConstraint {
     /// Create a new constraint with given feature weights.
-    pub fn new(feature_weights: HashMap<String, f64>) -> Self {
-        Self { feature_weights }
+    pub fn new(
+        feature_weights: HashMap<String, f64>,
+        depth_gate_threshold: Option<u32>,
+        context_class_config: Option<ContextClassConfig>,
+        founder_bias_config: Option<FounderBiasConfig>,
+    ) -> Self {
+        Self {
+            feature_weights,
+            depth_gate_threshold,
+            context_class_config,
+            founder_bias_config,
+        }
     }
 
     /// Create null model (no constraints).
@@ -165,12 +175,12 @@ impl AssemblyConstraint {
             if let Some(ref config) = self.context_class_config {
                 let source_classes: std::collections::HashSet<_> = source
                     .parts()
-                    .iter()
+                    .keys()
                     .filter_map(|p| config.primitive_classes.get(p).cloned())
                     .collect();
                 let target_classes: std::collections::HashSet<_> = target
                     .parts()
-                    .iter()
+                    .keys()
                     .filter_map(|p| config.primitive_classes.get(p).cloned())
                     .collect();
 

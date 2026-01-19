@@ -18,6 +18,7 @@ def compute_observation_ll(
     max_depth: int | None = None,
     null_latent_states: dict[int, float] | None = None,
     ess_ratio: float = 1.0,
+    compound_to_state: dict[str, int] | None = None,
 ) -> float:
     """Generative Flux Likelihood (First-Order).
 
@@ -79,12 +80,19 @@ def compute_observation_ll(
     for compound, count in counts_by_compound.items():
         state_id = None
 
-        # Resolve State ID
-        if compound.startswith("state_"):
+        # 1. Check direct mapping if provided
+        if compound_to_state and compound in compound_to_state:
+            state_id = compound_to_state[compound]
+
+        # 2. Resolve synthetic State ID
+        if state_id is None and isinstance(compound, str) and compound.startswith("state_"):
             try:
                 state_id = int(compound.split("state_")[1])
             except (IndexError, ValueError):
                 pass
+        elif state_id is None and isinstance(compound, int):
+            # If compound is already an int, it's a stable_id
+            state_id = compound
 
         # If we can't map to a state ID (e.g. unknown compound), we can't evaluate its
         # probability under the model.
@@ -118,7 +126,11 @@ def compute_observation_ll(
     # 4. Apply Importance Sampling Correction
     # If the simulator's ESS is low, our estimate of P(State|θ) is noisy.
     # We downweight the likelihood to avoid overfitting to noise.
-    total_ll *= max(0.0, min(1.0, ess_ratio))
+    # IMPORTANT: ESS scaling should only be applied to the ΔLL (Log-Likelihood Ratio),
+    # not absolute LL, to ensure that at the reference point (ESS ratio = 1.0),
+    # the stochastic LL matches the expected analytic LL.
+    if null_latent_states:
+        total_ll *= max(0.0, min(1.0, ess_ratio))
 
     if logger.isEnabledFor(logging.DEBUG):
         logger.debug(

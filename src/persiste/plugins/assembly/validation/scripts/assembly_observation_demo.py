@@ -8,10 +8,7 @@ import sys
 
 sys.path.insert(0, 'src')
 
-from persiste.plugins.assembly.observation.presence_model import (
-    FragmentObservationModel,
-    PresenceObservationModel,
-)
+from persiste.plugins.assembly.observation.counts_model import AssemblyCountsModel
 from persiste.plugins.assembly.states.assembly_state import AssemblyState
 
 
@@ -36,59 +33,50 @@ def main():
     for state, prob in latent_states.items():
         print(f"    {prob:.1f} - {state}")
 
-    # 2. Presence observation model
-    print("\n2. Presence Observation Model")
+    # 2. Assembly counts observation model
+    print("\n2. Assembly Counts Observation Model")
     print("-" * 70)
 
-    presence_model = PresenceObservationModel(
-        detection_prob=0.9,
-        false_positive_prob=0.01,
+    counts_model = AssemblyCountsModel(
+        detection_efficiency=0.9,
+        background_noise=0.01,
     )
 
-    print(f"  {presence_model}")
+    print(f"  {counts_model}")
 
-    # Simulate observations
-    observed_compounds = {'A', 'B'}  # We observe A and B, but not C
+    # Imagine we use stable IDs for the states
+    state_a = list(latent_states.keys())[0]
+    state_b = list(latent_states.keys())[1]
+    
+    # Simulate counts
+    observed_counts = {state_a.stable_id: 10, state_b.stable_id: 5}
 
-    print(f"\n  Observed compounds: {observed_compounds}")
+    print(f"\n  Observed counts (by ID): {observed_counts}")
+
+    # Convert latent states to IDs for the model
+    latent_ids = {s.stable_id: p for s, p in latent_states.items()}
 
     # Compute likelihood
-    log_lik = presence_model.compute_log_likelihood(observed_compounds, latent_states)
+    log_lik = counts_model.compute_log_likelihood(observed_counts, latent_ids)
     print(f"  Log-likelihood: {log_lik:.4f}")
 
-    # Predict presence probabilities
-    print("\n  Predicted presence probabilities:")
-    for compound in ['A', 'B', 'C', 'D']:
-        p_obs = presence_model.predict_presence(latent_states, compound)
-        print(f"    P(observe {compound}) = {p_obs:.4f}")
-
-    # 3. Fragment observation model
-    print("\n3. Fragment Observation Model")
+    # 3. Constraint Diagnostics
+    print("\n3. Constraint Diagnostics")
     print("-" * 70)
+    
+    # Create a dummy graph for diagnostic lookups
+    from persiste.plugins.assembly.graphs.assembly_graph import AssemblyGraph
+    graph = AssemblyGraph(['A', 'B', 'C'], max_depth=5)
+    counts_model.graph = graph
+    
+    # Register states in graph for diagnostics to work
+    for state in latent_states:
+        graph.register_state(state)
 
-    fragment_model = FragmentObservationModel(noise_level=0.1)
-    print(f"  {fragment_model}")
-
-    # Simulate fragment observations
-    observed_fragments = {
-        'A': 0.7,  # Intensity from states containing A
-        'B': 0.6,  # Intensity from states containing B
-        'C': 0.1,  # Small intensity from ABC state
-    }
-
-    print("\n  Observed fragments:")
-    for frag, intensity in observed_fragments.items():
-        print(f"    {frag}: {intensity:.2f}")
-
-    # Predict expected fragments
-    expected = fragment_model._predict_fragments(latent_states)
-    print("\n  Expected fragments (from latent states):")
-    for frag, intensity in expected.items():
-        print(f"    {frag}: {intensity:.2f}")
-
-    # Compute likelihood
-    log_lik_frag = fragment_model.compute_log_likelihood(observed_fragments, latent_states)
-    print(f"\n  Log-likelihood: {log_lik_frag:.4f}")
+    diagnostics = counts_model.get_constraint_diagnostics(latent_ids)
+    print("  Structural features inferred from occupancy:")
+    for key, val in diagnostics.items():
+        print(f"    {key}: {val:.4f}")
 
     # 4. Demonstrate missingness tolerance
     print("\n4. Missingness Tolerance")
@@ -97,22 +85,23 @@ def main():
     # We only observe A and B, completely missing C
     print("  Observation: We see A and B, but not C")
     print("  Latent truth: C is present in ABC state (10% probability)")
-    print("\n  Presence model handles this naturally:")
+    print("\n  Counts model handles this naturally:")
     print("    - Explains what we see (A, B)")
     print("    - Doesn't penalize for not seeing C (low probability anyway)")
     print("    - Tolerates massive missingness")
 
-    # 5. Compare to full observation
+    # 5. Comparison: Partial vs Full Observation
     print("\n5. Comparison: Partial vs Full Observation")
     print("-" * 70)
 
     # Partial observation (what we have)
-    partial_obs = {'A', 'B'}
-    log_lik_partial = presence_model.compute_log_likelihood(partial_obs, latent_states)
+    log_lik_partial = counts_model.compute_log_likelihood(observed_counts, latent_ids)
 
     # Full observation (if we saw everything)
-    full_obs = {'A', 'B', 'C'}
-    log_lik_full = presence_model.compute_log_likelihood(full_obs, latent_states)
+    full_counts = observed_counts.copy()
+    abc_state = list(latent_states.keys())[3]
+    full_counts[abc_state.stable_id] = 2
+    log_lik_full = counts_model.compute_log_likelihood(full_counts, latent_ids)
 
     print(f"  Partial observation (A, B):     log-lik = {log_lik_partial:.4f}")
     print(f"  Full observation (A, B, C):     log-lik = {log_lik_full:.4f}")
@@ -124,12 +113,12 @@ def main():
     print("=" * 70)
 
     print("\nKey Takeaways:")
-    print("  ✓ Presence model: P(observe | latent states)")
-    print("  ✓ Fragment model: P(fragments | latent states)")
-    print("  ✓ Both tolerate missingness (only explain what we see)")
-    print("  ✓ Detection probability < 1 (realistic)")
-    print("  ✓ False positives handled")
-    print("\nNext: Integrate with PERSISTE inference to fit constraint parameters!")
+    print("  ✓ Counts model: P(counts | latent states)")
+    print("  ✓ Structural diagnostics: Extract reuse/depth features from occupancy")
+    print("  ✓ Tolerates missingness (only explain what we see)")
+    print("  ✓ Detection efficiency < 1 (realistic)")
+    print("  ✓ Background noise handled")
+    print("\nNext: Integrate with PERSISTE inference to fit constraint parameters using counts!")
 
 
 if __name__ == '__main__':

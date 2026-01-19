@@ -5,12 +5,14 @@ Only generates states and transitions as needed.
 Scales sublinearly in state space.
 """
 
+from typing import Any
 from persiste.plugins.assembly.baselines.assembly_baseline import (
     AssemblyBaseline,
     TransitionType,
 )
 from persiste.plugins.assembly.constraints.assembly_constraint import AssemblyConstraint
 from persiste.plugins.assembly.constraints.utils import apply_assembly_constraint
+from persiste.plugins.assembly.states.resolver import StateIDResolver
 from persiste.plugins.assembly.states.assembly_state import AssemblyState
 
 
@@ -55,6 +57,8 @@ class AssemblyGraph:
         self._neighbor_cache: dict[
             AssemblyState, list[tuple[AssemblyState, float, TransitionType]]
         ] = {}
+        self._resolver = StateIDResolver(primitives)
+        self._id_to_state: dict[int, AssemblyState] = {}
 
         # Create primitive states (depth 0)
         self._primitive_states = [AssemblyState.from_parts([p], depth=0) for p in primitives]
@@ -250,14 +254,21 @@ class AssemblyGraph:
         baseline: AssemblyBaseline,
         constraint: AssemblyConstraint,
         max_states: int = 1000,
+        max_depth: int | None = None,
     ) -> int:
         """
         Count reachable states from start (BFS).
 
         Useful for understanding graph size.
         """
+        if max_depth is not None:
+            self.max_depth = max_depth
+
         visited = {start_state}
         queue = [start_state]
+
+        # Ensure start state is indexed
+        self._id_to_state[start_state.stable_id] = start_state
 
         while queue and len(visited) < max_states:
             current = queue.pop(0)
@@ -266,9 +277,56 @@ class AssemblyGraph:
             for neighbor, _, _ in neighbors:
                 if neighbor not in visited:
                     visited.add(neighbor)
+                    self._id_to_state[neighbor.stable_id] = neighbor
                     queue.append(neighbor)
 
         return len(visited)
+
+    def register_state(self, state: AssemblyState, state_id: int | None = None) -> None:
+        """
+        Manually register a state and its ID in the graph's index.
+        
+        Args:
+            state: AssemblyState object
+            state_id: Optional explicit 64-bit ID. If None, uses state.stable_id.
+        """
+        sid = state_id if state_id is not None else state.stable_id
+        self._id_to_state[sid] = state
+        # Also ensure it's in the state cache for structure-to-object lookups
+        self._state_cache[state.parts] = state
+
+    def bulk_register_states(self, states_data: dict[int, dict[str, Any]]) -> None:
+        """
+        Register multiple states from Rust-provided data.
+        
+        Args:
+            states_data: Mapping from stable_id to {parts: dict, depth: int, motifs: list}
+        """
+        for sid, info in states_data.items():
+            if sid in self._id_to_state:
+                continue
+                
+            # Create state object without triggering Rust ID computation
+            parts_dict = info["parts"]
+            parts_list = []
+            for p, c in parts_dict.items():
+                parts_list.extend([p] * c)
+                
+            state = AssemblyState.from_parts(
+                parts_list,
+                depth=info["depth"],
+                motifs=set(info.get("motifs", []))
+            )
+            
+            # Force the stable_id to match what Rust told us
+            object.__setattr__(state, "_stable_id_val", int(sid))
+            self.register_state(state, int(sid))
+
+    def get_state(self, state_id: int) -> AssemblyState | None:
+        """
+        Reverse lookup for a state ID.
+        """
+        return self._id_to_state.get(state_id)
 
     def __str__(self) -> str:
         return (

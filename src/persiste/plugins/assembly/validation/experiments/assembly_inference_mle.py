@@ -12,16 +12,16 @@ import numpy as np
 
 from persiste.plugins.assembly.assembly_interface import (
     AssemblyBaselineConfig,
+    AssemblyCountsConfig,
     AssemblyGraphConfig,
-    PresenceObservationConfig,
     SimulationSettings,
-    fit_presence_observations,
+    fit_assembly_counts,
 )
 from persiste.plugins.assembly.baselines.assembly_baseline import AssemblyBaseline
 from persiste.plugins.assembly.constraints.assembly_constraint import AssemblyConstraint
 from persiste.plugins.assembly.dynamics.gillespie import GillespieSimulator
 from persiste.plugins.assembly.graphs.assembly_graph import AssemblyGraph
-from persiste.plugins.assembly.observation.presence_model import PresenceObservationModel
+from persiste.plugins.assembly.observation.counts_model import AssemblyCountsModel
 from persiste.plugins.assembly.states.assembly_state import AssemblyState
 
 
@@ -33,7 +33,7 @@ def main():
     primitives = ["A", "B", "C"]
     graph = AssemblyGraph(primitives, max_depth=4, min_rate_threshold=1e-4)
     baseline = AssemblyBaseline(kappa=1.0, join_exponent=-0.5, split_exponent=0.3)
-    obs_model = PresenceObservationModel(detection_prob=0.9, false_positive_prob=0.01)
+    obs_model = AssemblyCountsModel(detection_efficiency=0.9, background_noise=0.01)
     initial_state = AssemblyState.from_parts([primitives[0]], depth=0)
 
     print("\nSynthetic setup:")
@@ -55,14 +55,16 @@ def main():
         burn_in=30.0,
     )
 
-    observed_compounds: set[str] = set()
+    observed_counts = {}
     rng = np.random.default_rng(99)
     for state, prob in latent_states.items():
         for part in state.get_parts_list():
+            if part not in observed_counts:
+                observed_counts[part] = 0
             if rng.random() < obs_model.detection_prob * prob:
-                observed_compounds.add(part)
+                observed_counts[part] += 1
 
-    print(f"\nObserved compounds: {sorted(observed_compounds)}")
+    print(f"\nObserved counts: {observed_counts}")
 
     baseline_cfg = AssemblyBaselineConfig(
         kappa=baseline.kappa,
@@ -74,15 +76,15 @@ def main():
         max_depth=graph.max_depth,
         min_rate_threshold=graph.min_rate,
     )
-    obs_cfg = PresenceObservationConfig(
-        detection_prob=obs_model.detection_prob,
-        false_positive_prob=obs_model.false_positive_prob,
+    obs_cfg = AssemblyCountsConfig(
+        detection_efficiency=obs_model.detection_efficiency,
+        background_noise=obs_model.background_noise,
     )
     sim_cfg = SimulationSettings(n_samples=35, t_max=55.0, burn_in=25.0)
 
-    print("\nRunning fit_presence_observations via ConstraintInference...")
-    result = fit_presence_observations(
-        observed_compounds=observed_compounds,
+    print("\nRunning fit_assembly_counts via ConstraintInference...")
+    result = fit_assembly_counts(
+        observed_counts=observed_counts,
         feature_names=list(theta_true.keys()),
         primitives=primitives,
         baseline_config=baseline_cfg,

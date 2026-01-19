@@ -71,8 +71,12 @@ impl AssemblyState {
         parts: BTreeMap<String, u32>,
         depth: u32,
         motifs: BTreeSet<String>,
+        stable_id: Option<AssemblyStateId>,
     ) -> Self {
-        let cached_id = Self::compute_id(&parts, depth, &motifs);
+        let cached_id = match stable_id {
+            Some(id) => id,
+            None => Self::compute_id(&parts, depth, &motifs),
+        };
         Self {
             parts,
             assembly_depth: depth,
@@ -93,6 +97,8 @@ impl AssemblyState {
         motifs: &BTreeSet<String>,
     ) -> AssemblyStateId {
         use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
         let mut hasher = DefaultHasher::new();
 
         // Hash parts in sorted order (BTreeMap is already sorted)
@@ -184,7 +190,12 @@ impl AssemblyState {
     pub fn join_with(&self, part: &str) -> Self {
         let mut new_parts = self.parts.clone();
         *new_parts.entry(part.to_string()).or_insert(0) += 1;
-        Self::from_parts_map(new_parts, self.assembly_depth + 1, self.motifs.clone())
+        Self::from_parts_map(
+            new_parts,
+            self.assembly_depth + 1,
+            self.motifs.clone(),
+            None,
+        )
     }
 
     /// Create a new state by joining two states.
@@ -195,7 +206,7 @@ impl AssemblyState {
         }
         let new_depth = a.assembly_depth.max(b.assembly_depth) + 1;
         let new_motifs: BTreeSet<String> = a.motifs.union(&b.motifs).cloned().collect();
-        Self::from_parts_map(new_parts, new_depth, new_motifs)
+        Self::from_parts_map(new_parts, new_depth, new_motifs, None)
     }
 }
 

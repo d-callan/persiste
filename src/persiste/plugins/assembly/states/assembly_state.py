@@ -50,6 +50,54 @@ class AssemblyState:
         if not self.parts and self.assembly_depth > 0:
             raise ValueError("Empty state must have depth 0")
 
+        # Use a private attribute to store the ID for the lazy stable_id property
+        object.__setattr__(self, "_stable_id_val", 0)
+
+    @property
+    def stable_id(self) -> int:
+        """
+        Get the 64-bit integer ID for this state, synchronized with Rust.
+        
+        This property is lazy-loaded because it requires calling into the Rust backend
+        to ensure the identifier matches what the simulation uses.
+        """
+        cached_id = object.__getattribute__(self, "_stable_id_val")
+        if cached_id != 0:
+            return cached_id
+
+        # Use a minimal simulation to force Rust to compute the deterministic ID
+        # This is the "source of truth" strategy.
+        import persiste_rust
+        
+        # We need primitives to resolve the ID, but for ID computation 
+        # any list containing the parts will work.
+        primitives = list(self.get_parts_dict().keys())
+        if not primitives:
+            primitives = ["A"] # Fallback for empty state
+
+        results = persiste_rust.simulate_assembly_trajectories(
+            primitives,
+            self.get_parts_list(),
+            {}, # theta
+            1,  # n_samples
+            0.0, # t_max
+            0.0, # burn_in
+            self.assembly_depth + 1, # max_depth
+            1,  # seed
+            1.0, # kappa
+            0.0, # join_exponent
+            0.0, # split_exponent
+            0.0, # decay_rate
+        )
+        
+        rust_id = results["paths"][0]["final_state_id"]
+        object.__setattr__(self, "_stable_id_val", rust_id)
+        return rust_id
+
+    def __hash__(self) -> int:
+        """Use stable_id for hashing to ensure consistency across processes/languages."""
+        return hash(self.stable_id)
+
     @classmethod
     def from_parts(
         cls,

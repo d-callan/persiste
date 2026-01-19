@@ -78,7 +78,7 @@ class TestEdgeCases:
 
         Expected: ESS collapses, resimulation occurs, weights remain finite.
         """
-        result = persiste_rust.simulate_assembly_trajectories(
+        result_dict = persiste_rust.simulate_assembly_trajectories(
             primitives=["A", "B"],
             initial_parts=["A"],
             theta={},
@@ -89,6 +89,7 @@ class TestEdgeCases:
             seed=42,
         )
 
+        result = result_dict["paths"]
         feature_counts = [r["feature_counts"] for r in result]
         final_state_ids = [r["final_state_id"] for r in result]
 

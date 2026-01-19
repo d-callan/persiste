@@ -20,7 +20,7 @@ import numpy as np
 from persiste.plugins.assembly.baselines.assembly_baseline import AssemblyBaseline, TransitionType
 from persiste.plugins.assembly.constraints.assembly_constraint import AssemblyConstraint
 from persiste.plugins.assembly.graphs.assembly_graph import AssemblyGraph
-from persiste.plugins.assembly.observation.presence_model import PresenceObservationModel
+from persiste.plugins.assembly.observation.counts_model import AssemblyCountsModel
 from persiste.plugins.assembly.states.assembly_state import AssemblyState
 
 
@@ -61,10 +61,7 @@ def main():
         min_rate_threshold=1e-4,
     )
 
-    obs_model = PresenceObservationModel(
-        detection_prob=0.9,
-        false_positive_prob=0.01,
-    )
+    obs_model = AssemblyCountsModel(detection_efficiency=0.9, background_noise=0.01)
 
     print(f"\n{baseline}")
     print(f"{constraint}")

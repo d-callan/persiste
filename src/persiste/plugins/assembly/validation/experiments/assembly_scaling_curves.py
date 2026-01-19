@@ -28,7 +28,7 @@ from persiste.plugins.assembly.baselines.assembly_baseline import AssemblyBaseli
 from persiste.plugins.assembly.constraints.assembly_constraint import AssemblyConstraint
 from persiste.plugins.assembly.dynamics.gillespie import GillespieSimulator
 from persiste.plugins.assembly.graphs.assembly_graph import AssemblyGraph
-from persiste.plugins.assembly.observation.presence_model import FrequencyWeightedPresenceModel
+from persiste.plugins.assembly.observation.counts_model import AssemblyCountsModel
 from persiste.plugins.assembly.states.assembly_state import AssemblyState
 
 
@@ -56,7 +56,7 @@ def measure_identifiability(
     primitives = [chr(65 + i) for i in range(n_primitives)]  # A, B, C, ...
     graph = AssemblyGraph(primitives, max_depth=max_depth, min_rate_threshold=1e-4)
     baseline = AssemblyBaseline(kappa=1.0, join_exponent=-0.5, split_exponent=0.3)
-    obs_model = FrequencyWeightedPresenceModel(detection_prob=0.9, false_positive_rate=0.5)
+    obs_model = AssemblyCountsModel(detection_efficiency=0.9, background_noise=0.5)
     initial_state = AssemblyState.from_parts([primitives[0]], depth=0)
 
     # Generate data

@@ -17,9 +17,8 @@ from persiste.plugins.assembly.baselines.assembly_baseline import AssemblyBaseli
 from persiste.plugins.assembly.constraints.assembly_constraint import AssemblyConstraint
 from persiste.plugins.assembly.graphs.assembly_graph import AssemblyGraph
 from persiste.plugins.assembly.observation import (
+    AssemblyCountsModel,
     AssemblyObservationModel,
-    FrequencyWeightedPresenceModel,
-    PresenceObservationModel,
     SimulationSettings,
 )
 from persiste.plugins.assembly.states.assembly_state import AssemblyState
@@ -44,55 +43,48 @@ class AssemblyGraphConfig:
 
 
 @dataclass
-class PresenceObservationConfig:
-    """Settings for presence-only observation models."""
+class AssemblyCountsConfig:
+    """Settings for counts-based observation models."""
 
-    detection_prob: float = 0.9
-    false_positive_prob: float = 0.01
-
-
-@dataclass
-class FrequencyObservationConfig:
-    """Settings for frequency-weighted observation models."""
-
-    detection_prob: float = 0.9
-    false_positive_rate: float = 0.1
+    detection_efficiency: float = 1.0
+    background_noise: float = 1e-6
 
 
-def fit_presence_observations(
-    observed_compounds: Iterable[str],
+def fit_assembly_counts(
+    observed_counts: Mapping[int | str, float],
     feature_names: Sequence[str],
     *,
     primitives: Sequence[str],
     baseline_config: AssemblyBaselineConfig | None = None,
     graph_config: AssemblyGraphConfig | None = None,
-    observation_config: PresenceObservationConfig | None = None,
+    observation_config: AssemblyCountsConfig | None = None,
     simulation: SimulationSettings | None = None,
     initial_state_parts: Sequence[str] | None = None,
     inference_kwargs: dict[str, Any] | None = None,
     rng_seed: int | None = None,
 ) -> ConstraintResult:
     """
-    Fit constraint parameters using presence/absence observations.
+    Fit constraint parameters using state abundance counts.
 
     Args:
-        observed_compounds: Iterable of detected compound identifiers.
-        feature_names: Constraint feature names to optimize (order matters).
-        primitives: Primitive building blocks that seed the assembly graph.
+        observed_counts: Mapping from state ID or string to observed count.
+        feature_names: Constraint feature names to optimize.
+        primitives: Primitive building blocks for the assembly graph.
         baseline_config: Optional baseline hyperparameters.
         graph_config: Optional graph construction parameters.
-        observation_config: Presence observation hyperparameters.
+        observation_config: Counts observation hyperparameters.
         simulation: Gillespie simulation settings.
-        initial_state_parts: Optional parts list for the initial assembly state.
+        initial_state_parts: Optional initial state composition.
         inference_kwargs: Extra arguments forwarded to ConstraintInference.fit().
 
     Returns:
         ConstraintResult with fitted parameters and diagnostics.
     """
 
-    obs_backend = PresenceObservationModel(
-        detection_prob=(observation_config or PresenceObservationConfig()).detection_prob,
-        false_positive_prob=(observation_config or PresenceObservationConfig()).false_positive_prob,
+    obs_cfg = observation_config or AssemblyCountsConfig()
+    obs_backend = AssemblyCountsModel(
+        detection_efficiency=obs_cfg.detection_efficiency,
+        background_noise=obs_cfg.background_noise,
     )
     adapter = _build_observation_adapter(
         primitives=primitives,
@@ -102,59 +94,6 @@ def fit_presence_observations(
         simulation=simulation,
         initial_state_parts=initial_state_parts,
         rng_seed=rng_seed,
-    )
-    constraint = _initialize_constraint(feature_names)
-    engine = ConstraintInference(constraint, adapter)
-
-    data = _wrap_observed_transitions()
-    data.observed_compounds = set(observed_compounds)
-
-    kwargs = inference_kwargs.copy() if inference_kwargs else {}
-    return engine.fit(data, method="MLE", **kwargs)
-
-
-def fit_frequency_observations(
-    observed_counts: Mapping[str, int],
-    feature_names: Sequence[str],
-    *,
-    primitives: Sequence[str],
-    baseline_config: AssemblyBaselineConfig | None = None,
-    graph_config: AssemblyGraphConfig | None = None,
-    observation_config: FrequencyObservationConfig | None = None,
-    simulation: SimulationSettings | None = None,
-    initial_state_parts: Sequence[str] | None = None,
-    inference_kwargs: dict[str, Any] | None = None,
-) -> ConstraintResult:
-    """
-    Fit constraint parameters using frequency-weighted presence observations.
-
-    Args:
-        observed_counts: Mapping from compound to observed frequency.
-        feature_names: Constraint feature names to optimize.
-        primitives: Primitive building blocks for the assembly graph.
-        baseline_config: Optional baseline hyperparameters.
-        graph_config: Optional graph construction parameters.
-        observation_config: Frequency observation hyperparameters.
-        simulation: Gillespie simulation settings.
-        initial_state_parts: Optional initial state composition.
-        inference_kwargs: Extra arguments forwarded to ConstraintInference.fit().
-
-    Returns:
-        ConstraintResult with fitted parameters and diagnostics.
-    """
-
-    obs_cfg = observation_config or FrequencyObservationConfig()
-    obs_backend = FrequencyWeightedPresenceModel(
-        detection_prob=obs_cfg.detection_prob,
-        false_positive_rate=obs_cfg.false_positive_rate,
-    )
-    adapter = _build_observation_adapter(
-        primitives=primitives,
-        baseline_config=baseline_config,
-        graph_config=graph_config,
-        obs_backend=obs_backend,
-        simulation=simulation,
-        initial_state_parts=initial_state_parts,
     )
     constraint = _initialize_constraint(feature_names)
     engine = ConstraintInference(constraint, adapter)
@@ -181,7 +120,7 @@ def _build_observation_adapter(
     primitives: Sequence[str],
     baseline_config: AssemblyBaselineConfig | None,
     graph_config: AssemblyGraphConfig | None,
-    obs_backend: PresenceObservationModel | FrequencyWeightedPresenceModel,
+    obs_backend: AssemblyCountsModel,
     simulation: SimulationSettings | None,
     initial_state_parts: Sequence[str] | None,
     rng_seed: int | None,
